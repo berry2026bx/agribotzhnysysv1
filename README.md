@@ -4,6 +4,13 @@ An open training and collaboration repository for an agricultural robotics and i
 
 This repository is used to organize learning notes, experiment records, source code, interface documents, simulation assets, test reports, and early-stage project outputs related to agricultural robots, PLC control, communication protocols, ROS2/Gazebo, embedded systems, sensor data, computer vision, CAD modeling, and research documentation.
 
+## Start Here
+
+New to GitHub? Read this guide first:
+
+- [GitHub Zero-Beginner Guide for Project Members](docs/github_beginner_guide.md)
+- [Git Repository Rules](docs/git_rules.md)
+
 ## Project Scope
 
 The repository focuses on the following work areas:
