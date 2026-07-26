@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from math import isfinite
 from typing import Any
 
 import serial
@@ -45,12 +46,18 @@ class GrblController:
     ) -> None:
         self.port = port
         self.baudrate = baudrate
-        self.read_timeout_s = read_timeout_s
-        self.write_timeout_s = write_timeout_s
-        self.startup_delay_s = startup_delay_s
-        self.response_deadline_s = response_deadline_s
-        self.completion_deadline_s = completion_deadline_s
-        self.poll_interval_s = poll_interval_s
+        self.read_timeout_s = _validate_duration("read_timeout_s", read_timeout_s)
+        self.write_timeout_s = _validate_duration("write_timeout_s", write_timeout_s)
+        self.startup_delay_s = _validate_duration(
+            "startup_delay_s", startup_delay_s, allow_zero=True
+        )
+        self.response_deadline_s = _validate_duration(
+            "response_deadline_s", response_deadline_s
+        )
+        self.completion_deadline_s = _validate_duration(
+            "completion_deadline_s", completion_deadline_s
+        )
+        self.poll_interval_s = _validate_duration("poll_interval_s", poll_interval_s)
         self._serial_factory = serial_factory
         self._clock = clock
         self._sleeper = sleeper
@@ -89,28 +96,42 @@ class GrblController:
         serial_port = self._serial
         if serial_port is None:
             return
-        self._serial = None
         try:
             serial_port.close()
         except Exception as exc:
             raise ControllerError(f"failed to close GRBL port {self.port!r}") from exc
+        self._serial = None
 
     def __enter__(self) -> GrblController:
         self.open()
         return self
 
     def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> bool:
-        self.close()
+        if exc_type is None:
+            self.close()
+        else:
+            try:
+                self.close()
+            except ControllerError as close_error:
+                if hasattr(exc_value, "add_note"):
+                    exc_value.add_note(f"GRBL controller close failed: {close_error}")
         return False
 
     def status(self) -> GrblStatus:
+        return self._status_until(
+            self._clock() + self.response_deadline_s,
+            "timeout waiting for GRBL status",
+        )
+
+    def _status_until(self, deadline: float, timeout_message: str) -> GrblStatus:
         serial_port = self._require_open()
+        if self._clock() >= deadline:
+            raise ControllerError(timeout_message)
         self._write(serial_port, b"?")
-        deadline = self._clock() + self.response_deadline_s
         while self._clock() < deadline:
-            parsed = self._read_parsed(serial_port)
+            parsed = self._read_parsed_until(serial_port, deadline)
             if parsed is None:
-                self._sleeper(self.poll_interval_s)
+                self._sleep_until(deadline)
                 continue
             if parsed.kind is LineKind.STATUS:
                 fields = parsed.raw[1:-1].split("|")
@@ -120,7 +141,7 @@ class GrblController:
                 raise ControllerError(f"GRBL status error: {parsed.raw}")
             if parsed.kind is LineKind.ALARM:
                 raise ControllerError(f"GRBL alarm while reading status: {parsed.raw}")
-        raise ControllerError("timeout waiting for GRBL status")
+        raise ControllerError(timeout_message)
 
     def jog(self, command: JogCommand) -> JogResult:
         normalized = validate_jog(command)
@@ -134,10 +155,13 @@ class GrblController:
 
         deadline = self._clock() + self.completion_deadline_s
         while self._clock() < deadline:
-            final_status = self.status()
+            final_status = self._status_until(
+                deadline,
+                "timeout waiting for GRBL jog completion",
+            )
             if final_status.state == "Idle":
                 return JogResult(command=normalized, acceptance=acceptance, final_status=final_status)
-            self._sleeper(self.poll_interval_s)
+            self._sleep_until(deadline)
         raise ControllerError("timeout waiting for GRBL jog completion")
 
     def _require_open(self) -> Any:
@@ -151,9 +175,16 @@ class GrblController:
         except Exception as exc:
             raise ControllerError("serial write failed") from exc
 
-    def _read_parsed(self, serial_port: Any):
+    def _read_parsed_until(self, serial_port: Any, deadline: float):
+        remaining = deadline - self._clock()
+        if remaining <= 0:
+            return None
         try:
-            raw = serial_port.readline()
+            serial_port.timeout = min(self.read_timeout_s, remaining)
+            try:
+                raw = serial_port.readline()
+            finally:
+                serial_port.timeout = self.read_timeout_s
         except Exception as exc:
             raise ControllerError("serial read failed") from exc
         if not raw:
@@ -167,9 +198,9 @@ class GrblController:
     def _wait_for_acceptance(self, serial_port: Any) -> str:
         deadline = self._clock() + self.response_deadline_s
         while self._clock() < deadline:
-            parsed = self._read_parsed(serial_port)
+            parsed = self._read_parsed_until(serial_port, deadline)
             if parsed is None:
-                self._sleeper(self.poll_interval_s)
+                self._sleep_until(deadline)
                 continue
             if parsed.kind is LineKind.ACK:
                 return parsed.raw
@@ -178,3 +209,21 @@ class GrblController:
             if parsed.kind is LineKind.ALARM:
                 raise ControllerError(f"GRBL alarm during jog: {parsed.raw}")
         raise ControllerError("timeout waiting for GRBL jog acceptance (ok)")
+
+    def _sleep_until(self, deadline: float) -> None:
+        remaining = deadline - self._clock()
+        if remaining > 0:
+            self._sleeper(min(self.poll_interval_s, remaining))
+
+
+def _validate_duration(name: str, value: object, *, allow_zero: bool = False) -> float:
+    if isinstance(value, bool):
+        raise ValueError(f"{name} must be a finite number")
+    try:
+        duration = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must be a finite number") from exc
+    if not isfinite(duration) or duration < 0 or (duration == 0 and not allow_zero):
+        qualifier = "non-negative" if allow_zero else "greater than zero"
+        raise ValueError(f"{name} must be finite and {qualifier}")
+    return duration
