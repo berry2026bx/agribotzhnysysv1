@@ -70,9 +70,9 @@ def test_valid_jog_opens_controller_and_calls_jog_once(capsys):
     assert controller.status_calls == 1
     assert controller.jog_calls[0] == JogCommand("X", 1.0, 10.0)
     output = capsys.readouterr().out
-    assert "Pre status: <Idle|MPos:0.000,0.000,0.000|FS:0,0>" in output
-    assert "Accepted: ok" in output
-    assert "final status" in output.lower()
+    assert "pre: <Idle|MPos:0.000,0.000,0.000|FS:0,0>" in output
+    assert "accepted: ok" in output
+    assert "final: " in output
     assert controller.result.final_status.raw in output
 
 

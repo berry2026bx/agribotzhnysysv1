@@ -35,10 +35,10 @@ def run(args: Any, controller_factory: Callable[[str], GrblController] = GrblCon
     try:
         with controller_factory(args.port) as controller:
             pre = controller.status()
-            print(f"Pre status: {pre.raw}")
+            print(f"pre: {pre.raw}")
             result = controller.jog(command)
-        print(f"Accepted: {result.acceptance}")
-        print(f"Final status: {result.final_status.raw}")
+        print(f"accepted: {result.acceptance}")
+        print(f"final: {result.final_status.raw}")
         return 0
     except (ControllerError, serial.SerialException, OSError) as exc:
         print(f"Jog failed: {exc}", file=sys.stderr)
