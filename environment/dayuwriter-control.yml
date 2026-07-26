@@ -1,0 +1,9 @@
+name: dayuwriter-control
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip
+  - pyserial>=3.5
+  - pytest>=8
+
