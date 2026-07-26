@@ -108,6 +108,16 @@ def test_status_writes_realtime_question_and_parses_state() -> None:
     assert factory.instances[0].writes == [b"?"]
 
 
+def test_status_times_out_after_one_realtime_query() -> None:
+    controller, factory, _ = make_controller(response_deadline_s=0.3)
+    controller.open()
+
+    with pytest.raises(ControllerError, match="timeout"):
+        controller.status()
+
+    assert factory.instances[0].writes == [b"?"]
+
+
 def test_jog_requires_idle_before_writing_motion() -> None:
     controller, factory, _ = make_controller()
     controller.open()
@@ -214,3 +224,21 @@ def test_close_is_idempotent_and_context_closes_on_failure() -> None:
             raise ValueError("body failed")
     assert other_serial.closed is False
     other.close()
+
+
+def test_context_closes_after_operational_status_timeout() -> None:
+    factory = FakeFactory()
+    clock = FakeClock()
+
+    with pytest.raises(ControllerError, match="timeout"):
+        with GrblController(
+            "COM-test",
+            serial_factory=factory,
+            clock=clock,
+            sleeper=clock.sleep,
+            startup_delay_s=0.0,
+            response_deadline_s=0.3,
+        ) as controller:
+            controller.status()
+
+    assert factory.instances[0].closed is True
