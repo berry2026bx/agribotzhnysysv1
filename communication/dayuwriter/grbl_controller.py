@@ -84,12 +84,14 @@ class GrblController:
             self._serial.reset_input_buffer()
         except Exception as exc:
             serial_port = self._serial
-            self._serial = None
             if serial_port is not None:
                 try:
                     serial_port.close()
-                except Exception:
-                    pass
+                except Exception as cleanup_error:
+                    if hasattr(exc, "add_note"):
+                        exc.add_note(f"GRBL partial-open cleanup failed: {cleanup_error}")
+                else:
+                    self._serial = None
             raise ControllerError(f"failed to open GRBL port {self.port!r}") from exc
 
     def close(self) -> None:
@@ -127,7 +129,7 @@ class GrblController:
         serial_port = self._require_open()
         if self._clock() >= deadline:
             raise ControllerError(timeout_message)
-        self._write(serial_port, b"?")
+        self._write_until(serial_port, b"?", deadline, timeout_message)
         while self._clock() < deadline:
             parsed = self._read_parsed_until(serial_port, deadline)
             if parsed is None:
@@ -173,6 +175,27 @@ class GrblController:
         try:
             serial_port.write(payload)
         except Exception as exc:
+            raise ControllerError("serial write failed") from exc
+
+    def _write_until(
+        self,
+        serial_port: Any,
+        payload: bytes,
+        deadline: float,
+        timeout_message: str,
+    ) -> None:
+        remaining = deadline - self._clock()
+        if remaining <= 0:
+            raise ControllerError(timeout_message)
+        try:
+            serial_port.write_timeout = min(self.write_timeout_s, remaining)
+            try:
+                serial_port.write(payload)
+            finally:
+                serial_port.write_timeout = self.write_timeout_s
+        except Exception as exc:
+            if self._clock() >= deadline:
+                raise ControllerError(timeout_message) from exc
             raise ControllerError("serial write failed") from exc
 
     def _read_parsed_until(self, serial_port: Any, deadline: float):

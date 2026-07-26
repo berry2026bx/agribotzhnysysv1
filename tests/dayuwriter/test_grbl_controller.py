@@ -29,16 +29,25 @@ class FakeSerial:
         self.clock = clock
         self.kwargs = kwargs
         self.timeout = kwargs["timeout"]
+        self.write_timeout = kwargs["write_timeout"]
         self.writes: list[bytes] = []
         self.read_timeouts: list[float] = []
+        self.write_timeouts: list[float] = []
         self.reads: deque[bytes] = deque()
         self.reset_calls = 0
         self.closed = False
+        self.close_calls = 0
         self.on_write = None
+        self.block_writes = False
+        self.fail_reset = False
         self.fail_close = False
 
     def write(self, data: bytes) -> int:
         self.writes.append(data)
+        if self.block_writes:
+            self.write_timeouts.append(self.write_timeout)
+            self.clock.sleep(self.write_timeout)
+            raise TimeoutError("write timed out")
         if self.on_write:
             self.on_write(data, self)
         return len(data)
@@ -52,9 +61,12 @@ class FakeSerial:
 
     def reset_input_buffer(self) -> None:
         self.reset_calls += 1
+        if self.fail_reset:
+            raise OSError("reset failed")
         self.reads.clear()
 
     def close(self) -> None:
+        self.close_calls += 1
         if self.fail_close:
             raise OSError("close failed")
         self.closed = True
@@ -63,10 +75,14 @@ class FakeSerial:
 class FakeFactory:
     def __init__(self, clock: FakeClock) -> None:
         self.clock = clock
+        self.fail_reset = False
+        self.fail_close = False
         self.instances: list[FakeSerial] = []
 
     def __call__(self, **kwargs) -> FakeSerial:
         port = FakeSerial(self.clock, **kwargs)
+        port.fail_reset = self.fail_reset
+        port.fail_close = self.fail_close
         self.instances.append(port)
         return port
 
@@ -145,6 +161,61 @@ def test_status_times_out_after_one_realtime_query() -> None:
         controller.status()
 
     assert factory.instances[0].writes == [b"?"]
+
+
+def test_status_write_timeout_is_capped_by_response_deadline() -> None:
+    controller, factory, clock = make_controller(
+        response_deadline_s=0.3,
+        write_timeout_s=1.0,
+    )
+    controller.open()
+    serial_port = factory.instances[0]
+    serial_port.block_writes = True
+
+    with pytest.raises(ControllerError, match="timeout"):
+        controller.status()
+
+    assert serial_port.writes == [b"?"]
+    assert serial_port.write_timeouts == [pytest.approx(0.3)]
+    assert serial_port.write_timeout == pytest.approx(1.0)
+    assert clock.now == pytest.approx(0.3)
+
+
+def test_open_retains_port_when_partial_initialization_cleanup_fails() -> None:
+    clock = FakeClock()
+    factory = FakeFactory(clock)
+    factory.fail_reset = True
+    factory.fail_close = True
+    controller, _, _ = make_controller(factory=factory, clock=clock)
+
+    with pytest.raises(ControllerError, match="failed to open") as raised:
+        controller.open()
+
+    serial_port = factory.instances[0]
+    assert controller._serial is serial_port
+    assert serial_port.closed is False
+    assert serial_port.close_calls == 1
+    assert str(raised.value.__cause__) == "reset failed"
+    assert "cleanup failed" in raised.value.__cause__.__notes__[0]
+
+    serial_port.fail_close = False
+    controller.close()
+    assert serial_port.closed is True
+    assert controller._serial is None
+
+
+def test_open_clears_port_after_successful_partial_initialization_cleanup() -> None:
+    clock = FakeClock()
+    factory = FakeFactory(clock)
+    factory.fail_reset = True
+    controller, _, _ = make_controller(factory=factory, clock=clock)
+
+    with pytest.raises(ControllerError, match="failed to open"):
+        controller.open()
+
+    serial_port = factory.instances[0]
+    assert serial_port.closed is True
+    assert controller._serial is None
 
 
 def test_jog_requires_idle_before_writing_motion() -> None:
