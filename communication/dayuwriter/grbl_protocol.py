@@ -8,6 +8,8 @@ READ_ONLY_REALTIME_COMMANDS = frozenset({"?"})
 MAX_JOG_DISTANCE_MM = 5.0
 MAX_XY_FEED_MM_MIN = 100.0
 MAX_Z_FEED_MM_MIN = 50.0
+MIN_JOG_DISTANCE_MM = 0.001
+MIN_JOG_FEED_MM_MIN = 0.001
 
 
 class LineKind(str, Enum):
@@ -41,12 +43,20 @@ def validate_jog(command: JogCommand) -> JogCommand:
         raise ValueError(f"unsupported jog axis: {command.axis!r}")
 
     distance_mm = float(command.distance_mm)
-    if not isfinite(distance_mm) or distance_mm == 0 or abs(distance_mm) > MAX_JOG_DISTANCE_MM:
+    if (
+        not isfinite(distance_mm)
+        or abs(distance_mm) < MIN_JOG_DISTANCE_MM
+        or abs(distance_mm) > MAX_JOG_DISTANCE_MM
+    ):
         raise ValueError(f"unsafe jog distance: {command.distance_mm!r}")
 
     feed_mm_min = float(command.feed_mm_min)
     max_feed = MAX_Z_FEED_MM_MIN if axis == "Z" else MAX_XY_FEED_MM_MIN
-    if not isfinite(feed_mm_min) or feed_mm_min <= 0 or feed_mm_min > max_feed:
+    if (
+        not isfinite(feed_mm_min)
+        or feed_mm_min < MIN_JOG_FEED_MM_MIN
+        or feed_mm_min > max_feed
+    ):
         raise ValueError(f"unsafe jog feed: {command.feed_mm_min!r}")
 
     return JogCommand(axis=axis, distance_mm=distance_mm, feed_mm_min=feed_mm_min)
@@ -55,9 +65,13 @@ def validate_jog(command: JogCommand) -> JogCommand:
 def encode_jog(command: JogCommand) -> bytes:
     normalized = validate_jog(command)
     return (
-        f"$J=G91 {normalized.axis}{normalized.distance_mm:g} "
-        f"F{normalized.feed_mm_min:g}\n"
+        f"$J=G91 G21 {normalized.axis}{_format_jog_number(normalized.distance_mm)} "
+        f"F{_format_jog_number(normalized.feed_mm_min)}\n"
     ).encode("ascii")
+
+
+def _format_jog_number(value: float) -> str:
+    return f"{value:.3f}".rstrip("0").rstrip(".")
 
 
 def assert_read_only(command: str) -> None:

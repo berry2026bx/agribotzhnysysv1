@@ -56,7 +56,20 @@ def test_validate_jog_normalizes_axis_and_numeric_values() -> None:
 
 
 def test_encode_jog_uses_exact_grbl_relative_jog_format() -> None:
-    assert encode_jog(JogCommand(axis="X", distance_mm=1, feed_mm_min=50)) == b"$J=G91 X1 F50\n"
+    assert encode_jog(JogCommand(axis="X", distance_mm=1, feed_mm_min=50)) == b"$J=G91 G21 X1 F50\n"
+
+
+def test_encode_jog_uses_fixed_decimal_format_without_exponents() -> None:
+    encoded = encode_jog(JogCommand(axis="X", distance_mm=1.234, feed_mm_min=0.001))
+
+    assert encoded == b"$J=G91 G21 X1.234 F0.001\n"
+    assert b"e" not in encoded.lower()
+
+
+def test_validate_jog_accepts_minimum_distance_and_feed_resolution() -> None:
+    command = validate_jog(JogCommand(axis="X", distance_mm=0.001, feed_mm_min=0.001))
+
+    assert command == JogCommand(axis="X", distance_mm=0.001, feed_mm_min=0.001)
 
 
 @pytest.mark.parametrize(
@@ -64,11 +77,13 @@ def test_encode_jog_uses_exact_grbl_relative_jog_format() -> None:
     [
         JogCommand(axis="A", distance_mm=1, feed_mm_min=50),
         JogCommand(axis="X", distance_mm=0, feed_mm_min=50),
+        JogCommand(axis="X", distance_mm=1e-7, feed_mm_min=50),
         JogCommand(axis="X", distance_mm=float("nan"), feed_mm_min=50),
         JogCommand(axis="X", distance_mm=float("inf"), feed_mm_min=50),
         JogCommand(axis="X", distance_mm=5.1, feed_mm_min=50),
         JogCommand(axis="X", distance_mm=-5.1, feed_mm_min=50),
         JogCommand(axis="X", distance_mm=1, feed_mm_min=0),
+        JogCommand(axis="X", distance_mm=1, feed_mm_min=1e-7),
         JogCommand(axis="X", distance_mm=1, feed_mm_min=-1),
         JogCommand(axis="X", distance_mm=1, feed_mm_min=float("nan")),
         JogCommand(axis="X", distance_mm=1, feed_mm_min=float("inf")),
