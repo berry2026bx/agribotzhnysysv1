@@ -10,6 +10,9 @@ class FakeController:
         self.port = port
         self.commands: list[JogCommand] = []
         self.closed = False
+        self.x = 0.0
+        self.y = 0.0
+        self.z = 0.0
 
     def __enter__(self):
         return self
@@ -18,15 +21,22 @@ class FakeController:
         self.closed = True
 
     def status(self) -> GrblStatus:
-        return GrblStatus("<Idle|MPos:0.000,0.000,0.000>", "Idle")
+        raw = f"<Idle|MPos:{self.x:.3f},{self.y:.3f},{self.z:.3f}>"
+        return GrblStatus(raw, "Idle")
 
     def jog(self, command: JogCommand) -> JogResult:
         normalized = JogCommand(command.axis.upper(), float(command.distance_mm), float(command.feed_mm_min))
         self.commands.append(normalized)
+        if normalized.axis == "X":
+            self.x += normalized.distance_mm
+        elif normalized.axis == "Y":
+            self.y += normalized.distance_mm
+        else:
+            self.z += normalized.distance_mm
         return JogResult(
             normalized,
             "ok",
-            GrblStatus("<Idle|MPos:5.000,0.000,0.000>", "Idle"),
+            self.status(),
         )
 
 
@@ -96,3 +106,39 @@ def test_console_eof_closes_cleanly() -> None:
     assert run_console("COM3", controller_factory=factory, input_fn=eof, output_fn=output.append) == 0
     assert factory.instance is not None and factory.instance.closed
     assert output[-1] == "closed"
+
+
+def test_console_goto_splits_motion_and_reaches_absolute_target() -> None:
+    factory = FakeFactory()
+    output: list[str] = []
+
+    result = run_console(
+        "COM3",
+        controller_factory=factory,
+        input_fn=scripted_input("goto 12 -8 100", "where", "quit"),
+        output_fn=output.append,
+    )
+
+    assert result == 0
+    assert factory.instance is not None
+    assert all(abs(command.distance_mm) <= 5 for command in factory.instance.commands)
+    assert factory.instance.x == 12
+    assert factory.instance.y == -8
+    assert "position: X=12 Y=-8 Z=0 mm" in output
+
+
+def test_console_rejects_out_of_bounds_goto_before_moving() -> None:
+    factory = FakeFactory()
+    output: list[str] = []
+
+    result = run_console(
+        "COM3",
+        controller_factory=factory,
+        input_fn=scripted_input("goto 191 0 100", "quit"),
+        output_fn=output.append,
+    )
+
+    assert result == 0
+    assert factory.instance is not None
+    assert factory.instance.commands == []
+    assert any(line.startswith("invalid target:") for line in output)
