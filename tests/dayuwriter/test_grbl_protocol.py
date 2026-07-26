@@ -1,10 +1,13 @@
 import pytest
 
 from communication.dayuwriter.grbl_protocol import (
+    JogCommand,
     LineKind,
     assert_read_only,
+    encode_jog,
     encode_read_only,
     parse_line,
+    validate_jog,
 )
 
 
@@ -45,3 +48,34 @@ def test_parse_line_preserves_raw_text(raw: str, expected_kind: LineKind) -> Non
     assert parsed.raw == raw
     assert parsed.kind is expected_kind
 
+
+def test_validate_jog_normalizes_axis_and_numeric_values() -> None:
+    command = validate_jog(JogCommand(axis="x", distance_mm="1.5", feed_mm_min="50"))
+
+    assert command == JogCommand(axis="X", distance_mm=1.5, feed_mm_min=50.0)
+
+
+def test_encode_jog_uses_exact_grbl_relative_jog_format() -> None:
+    assert encode_jog(JogCommand(axis="X", distance_mm=1, feed_mm_min=50)) == b"$J=G91 X1 F50\n"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        JogCommand(axis="A", distance_mm=1, feed_mm_min=50),
+        JogCommand(axis="X", distance_mm=0, feed_mm_min=50),
+        JogCommand(axis="X", distance_mm=float("nan"), feed_mm_min=50),
+        JogCommand(axis="X", distance_mm=float("inf"), feed_mm_min=50),
+        JogCommand(axis="X", distance_mm=5.1, feed_mm_min=50),
+        JogCommand(axis="X", distance_mm=-5.1, feed_mm_min=50),
+        JogCommand(axis="X", distance_mm=1, feed_mm_min=0),
+        JogCommand(axis="X", distance_mm=1, feed_mm_min=-1),
+        JogCommand(axis="X", distance_mm=1, feed_mm_min=float("nan")),
+        JogCommand(axis="X", distance_mm=1, feed_mm_min=float("inf")),
+        JogCommand(axis="X", distance_mm=1, feed_mm_min=100.1),
+        JogCommand(axis="Z", distance_mm=1, feed_mm_min=50.1),
+    ],
+)
+def test_validate_jog_rejects_unsafe_commands(command: JogCommand) -> None:
+    with pytest.raises(ValueError):
+        validate_jog(command)
