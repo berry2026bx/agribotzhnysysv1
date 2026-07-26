@@ -7,6 +7,7 @@ from communication.dayuwriter.grbl_controller import (
     GrblController,
     GrblStatus,
     JogResult,
+    TraceEvent,
 )
 from communication.dayuwriter.grbl_protocol import JogCommand
 
@@ -364,6 +365,31 @@ def test_context_closes_after_operational_status_timeout() -> None:
             controller.status()
 
     assert factory.instances[0].closed is True
+
+
+def test_controller_emits_actual_serial_tx_rx_trace_events() -> None:
+    events: list[TraceEvent] = []
+    controller, factory, _ = make_controller(trace_sink=events.append)
+    controller.open()
+    serial_port = factory.instances[0]
+
+    def respond(data: bytes, port: FakeSerial) -> None:
+        if data == b"?":
+            port.reads.append(b"<Idle|MPos:0,0,0|FS:0,0>\n")
+        elif data.startswith(b"$J="):
+            port.reads.append(b"ok\n")
+
+    serial_port.on_write = respond
+
+    controller.jog(JogCommand("X", 1, 50))
+
+    assert ("TX", "?") in [(event.kind, event.text) for event in events]
+    assert ("TX", "$J=G91 G21 X1 F50") in [(event.kind, event.text) for event in events]
+    assert ("RX", "ok") in [(event.kind, event.text) for event in events]
+    assert any(
+        event.kind == "RX" and event.text.startswith("<Idle|MPos:")
+        for event in events
+    )
 
 
 def test_context_preserves_body_error_when_close_also_fails() -> None:

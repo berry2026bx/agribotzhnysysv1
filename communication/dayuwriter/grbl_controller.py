@@ -28,6 +28,14 @@ class ControllerError(RuntimeError):
     pass
 
 
+@dataclass(frozen=True)
+class TraceEvent:
+    """An observed controller call or actual serial payload."""
+
+    kind: str
+    text: str
+
+
 class GrblController:
     def __init__(
         self,
@@ -43,6 +51,7 @@ class GrblController:
         serial_factory: Callable[..., Any] = serial.Serial,
         clock: Callable[[], float] = time.monotonic,
         sleeper: Callable[[float], None] = time.sleep,
+        trace_sink: Callable[[TraceEvent], None] | None = None,
     ) -> None:
         self.port = port
         self.baudrate = baudrate
@@ -61,12 +70,14 @@ class GrblController:
         self._serial_factory = serial_factory
         self._clock = clock
         self._sleeper = sleeper
+        self._trace_sink = trace_sink
         self._serial: Any | None = None
 
     def open(self) -> None:
         if self._serial is not None:
             return
         try:
+            self._trace("CALL", f"GrblController.open(port={self.port!r})")
             self._serial = self._serial_factory(
                 port=self.port,
                 baudrate=self.baudrate,
@@ -99,6 +110,7 @@ class GrblController:
         if serial_port is None:
             return
         try:
+            self._trace("CALL", "GrblController.close()")
             serial_port.close()
         except Exception as exc:
             raise ControllerError(f"failed to close GRBL port {self.port!r}") from exc
@@ -120,6 +132,7 @@ class GrblController:
         return False
 
     def status(self) -> GrblStatus:
+        self._trace("CALL", "GrblController.status()")
         return self._status_until(
             self._clock() + self.response_deadline_s,
             "timeout waiting for GRBL status",
@@ -147,6 +160,10 @@ class GrblController:
 
     def jog(self, command: JogCommand) -> JogResult:
         normalized = validate_jog(command)
+        self._trace(
+            "CALL",
+            f"GrblController.jog(axis={normalized.axis}, distance_mm={normalized.distance_mm:g}, feed_mm_min={normalized.feed_mm_min:g})",
+        )
         before = self.status()
         if before.state != "Idle":
             raise ControllerError(f"jog requires Idle state, got {before.state!r}")
@@ -173,6 +190,7 @@ class GrblController:
 
     def _write(self, serial_port: Any, payload: bytes) -> None:
         try:
+            self._trace("TX", _payload_text(payload))
             serial_port.write(payload)
         except Exception as exc:
             raise ControllerError("serial write failed") from exc
@@ -190,6 +208,7 @@ class GrblController:
         try:
             serial_port.write_timeout = min(self.write_timeout_s, remaining)
             try:
+                self._trace("TX", _payload_text(payload))
                 serial_port.write(payload)
             finally:
                 serial_port.write_timeout = self.write_timeout_s
@@ -216,7 +235,17 @@ class GrblController:
             text = raw.decode("ascii", errors="replace")
         else:
             text = str(raw)
+        self._trace("RX", text.rstrip("\r\n"))
         return parse_line(text)
+
+    def _trace(self, kind: str, text: str) -> None:
+        if self._trace_sink is None:
+            return
+        try:
+            self._trace_sink(TraceEvent(kind, text))
+        except Exception:
+            # Diagnostics must never alter the machine-control path.
+            pass
 
     def _wait_for_acceptance(self, serial_port: Any) -> str:
         deadline = self._clock() + self.response_deadline_s
@@ -250,3 +279,7 @@ def _validate_duration(name: str, value: object, *, allow_zero: bool = False) ->
         qualifier = "non-negative" if allow_zero else "greater than zero"
         raise ValueError(f"{name} must be finite and {qualifier}")
     return duration
+
+
+def _payload_text(payload: bytes) -> str:
+    return payload.decode("ascii", errors="replace").rstrip("\r\n")
