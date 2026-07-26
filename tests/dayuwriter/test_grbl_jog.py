@@ -19,6 +19,7 @@ class FakeController:
         )
         self.error = error
         self.jog_calls = []
+        self.status_calls = 0
 
     def __enter__(self):
         return self
@@ -31,6 +32,10 @@ class FakeController:
         if self.error:
             raise self.error
         return self.result
+
+    def status(self):
+        self.status_calls += 1
+        return GrblStatus("<Idle|MPos:0.000,0.000,0.000|FS:0,0>", "Idle")
 
 
 def _args(**overrides):
@@ -62,8 +67,11 @@ def test_valid_jog_opens_controller_and_calls_jog_once(capsys):
     assert grbl_jog.run(_args(), factory) == 0
     assert calls == ["COM9"]
     assert len(controller.jog_calls) == 1
+    assert controller.status_calls == 1
     assert controller.jog_calls[0] == JogCommand("X", 1.0, 10.0)
     output = capsys.readouterr().out
+    assert "Pre status: <Idle|MPos:0.000,0.000,0.000|FS:0,0>" in output
+    assert "Accepted: ok" in output
     assert "final status" in output.lower()
     assert controller.result.final_status.raw in output
 
