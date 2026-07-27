@@ -1,8 +1,23 @@
-# 07 新笔记本与新场地迁移手册
+# 07 新电脑部署与现场迁移手册
 
-适用对象：已完成 DayuWriter 基础恢复、Python 控制和 RealSense D435i A 只读采集后，准备在另一台 Windows 11 笔记本与更大场地继续实验。
+适用对象：把当前 DayuWriter 控制界面和写字机迁移到一台全新的 Windows 11 电脑，并在新电脑上重新完成一次真实连接和小幅运动验证。
 
-本手册的目标是恢复可复现的软件和硬件基线，然后在最终相机位置完成相机 A 到 P0 的标定。它不授权检测结果直接驱动写字机。
+本手册的目标是恢复可复现的软件和硬件基线，然后在最终相机位置完成相机 A 到 P0 的标定。它不授权检测结果直接驱动写字机。文中 `COMx` 是占位符，必须替换为新电脑实际识别到的端口，例如 `COM4`。
+
+## 最短成功路径
+
+第一次迁移只需要完成下面 8 步；相机和视觉标定放到写字机重新跑通之后：
+
+1. 新电脑安装 Git、Miniconda/Anaconda、VS Code、VS Code Python 扩展和 CH340 驱动。
+2. 克隆本仓库的 `codex/dayuwriter-recovery-execution` 分支。
+3. 用 `environment/dayuwriter-control.yml` 创建 `dayuwriter-control` 环境。
+4. 保持 12V 断开，只插写字机 USB，查出实际 `COMx`。
+5. 断开其他串口软件；检查机械和 12V 极性；让笔架物理对准 P0。
+6. 接 USB 后再接 12V，观察无异常，再启动可视化界面。
+7. 点击“连接并读取状态”，确认真实 `RX` 状态帧和 `Idle`，这一步不会自动移动。
+8. 确认笔尖悬空、空间足够后，只做一个受限的 `X/Y ±5 mm` 按钮动作，等待最终 `Idle` 并观察实机。
+
+完成第 8 步，才算“新电脑已经跑通写字机”。
 
 ## 0. 先明确哪些内容可复用
 
@@ -83,6 +98,8 @@ codex/dayuwriter-recovery-execution
 
 不要只复制某个 `.py` 文件，也不要复制当前电脑的 `.conda` 环境目录。环境必须由清单重新创建。
 
+如果 `code` 命令不可用，直接打开 VS Code，选择“文件 → 打开文件夹”，打开上面 `$dayuWorkspace` 指向的目录即可。后续 PowerShell 命令必须在这个项目根目录执行；目录中应能看到 `communication`、`docs`、`environment` 和 `tests`。
+
 ## 4. 创建 Python 环境
 
 在项目根目录执行：
@@ -95,7 +112,7 @@ python -c "import serial, numpy, pyrealsense2 as rs; print(serial.__version__); 
 python -m pytest -q --basetemp .pytest_cache\new-laptop-tests
 ```
 
-预期：Python 3.11、`pyserial`、`numpy`、`pyrealsense2` 均可导入，测试全部通过。测试不应打开 COM 口或移动写字机。
+预期：Python 3.11、`pyserial`、`numpy`、`pyrealsense2` 均可导入，测试全部通过。测试不应打开 COM 口或移动写字机。若暂时只验证写字机，可以先执行 `python -c "import serial; print(serial.__version__)"`，RealSense 依赖仍建议按清单一次装齐。
 
 在 VS Code 中选择解释器：
 
@@ -104,6 +121,42 @@ dayuwriter-control
 ```
 
 或选择该环境中 `python.exe` 的绝对路径。
+
+## 4.1 启动当前三页可视化界面
+
+当前界面是 Python/Tkinter 桌面程序，不是网页服务，不需要启动浏览器或 Node.js。它包含三个页面：`现场控制`、`通信入门`、`坐标入门`。
+
+在 VS Code 的 PowerShell 终端执行：
+
+```powershell
+conda activate dayuwriter-control
+$dayuWorkspace = "$env:USERPROFILE\Documents\DayuWriter"
+Set-Location $dayuWorkspace
+python -m communication.dayuwriter.grbl_monitor --port COMx
+```
+
+例如新电脑实际端口为 `COM7`，就执行：
+
+```powershell
+python -m communication.dayuwriter.grbl_monitor --port COM7
+```
+
+启动程序只创建窗口，不会因为打开窗口而发送运动指令。窗口中的“串口”指标、连接提示和通信说明会使用命令行传入的实际端口。只有点击“连接并读取状态”后，程序才打开串口并执行首次只读 `?` 查询；连接成功后，动作按钮才会解锁。
+
+演示时可以按这个因果顺序操作：
+
+```text
+点击连接并读取状态
+  → CALL：Python 调用 status()
+  → TX：发送 ?（只读查询，不移动）
+  → RX：收到 <Idle|MPos:...|FS:...|Pn:...>
+  → 点击一个受限 X/Y 按钮
+  → CALL → TX $J=G91 G21 ... → RX ok
+  → TX ? / RX Jog（运动中）
+  → RX Idle（GRBL 报告控制周期结束）
+```
+
+`ok` 仅表示 GRBL 接受了文本；必须同时看到最终 `Idle`，并在现场观察真实机构运动。关闭窗口后，程序会释放串口；若端口仍被占用，检查是否还有旧的控制台、UGS、Arduino 串口监视器或 Python 进程。
 
 ## 5. 安装并验证 RealSense
 

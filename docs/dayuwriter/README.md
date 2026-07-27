@@ -26,6 +26,7 @@
 4. [04-坐标系、P0 与机械标定](04-coordinate-calibration.md)
 5. [05-日常操作与故障排查](05-operation-troubleshooting.md)
 6. [06-D435i 视觉改造路线](06-d435i-vision-roadmap.md)
+7. [07-新电脑部署与现场迁移](07-new-laptop-migration.md)
 
 ## 原始证据
 
@@ -37,6 +38,7 @@
 - `communication/dayuwriter/grbl_controller.py`：持久串口与状态机
 - `communication/dayuwriter/grbl_protocol.py`：GRBL 命令校验和编码
 - `communication/dayuwriter/workspace.py`：P0 坐标解析和 XY 安全范围
+- `communication/dayuwriter/grbl_monitor.py`：三页现场控制与通信可视化界面
 - `tests/dayuwriter/`：离线测试
 
 ## 当前仓库位置

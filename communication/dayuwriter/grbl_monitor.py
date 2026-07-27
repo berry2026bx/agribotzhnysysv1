@@ -112,7 +112,7 @@ PROTOCOL_GUIDE = (
         "什么是串口？",
         "电脑与控制板之间的一条有顺序的数据通道。",
         "这里使用 USB 转 CH340 芯片，把电脑里的字节送到 Arduino/GRBL，再把返回字节送回来。",
-        "COM4 · 115200 baud · 8-N-1",
+        "COMx · 115200 baud · 8-N-1",
     ),
     ProtocolGuideEntry(
         "115200",
@@ -138,7 +138,7 @@ PROTOCOL_GUIDE = (
     ProtocolGuideEntry(
         "TX",
         "Transmit：电脑发出的数据",
-        "TX 行表示 Python 实际写入 COM4 的内容。",
+        "TX 行表示 Python 实际写入当前串口的内容。",
         "它是证据链中的‘发送’方向；界面中的 TX 不是预演，而是控制器写串口时记录的真实载荷。",
         'TX  $J=G91 G21 X5 F100\\n',
     ),
@@ -372,7 +372,7 @@ class ChainStage:
 
 CHAIN_STAGES = (
     ChainStage("python", "Python 调用", "持久控制器接到动作请求"),
-    ChainStage("command", "TX 运动指令", "ASCII 写入 COM4"),
+    ChainStage("command", "TX 运动指令", "ASCII 写入当前串口"),
     ChainStage("accepted", "RX ok", "GRBL 接收，不代表完成"),
     ChainStage("poll", "TX ?", "读取实时状态"),
     ChainStage("running", "RX Jog", "GRBL 报告运动进行中"),
@@ -506,7 +506,7 @@ class ProtocolMonitorApp:
         self._root.configure(bg=self.BG)
         self._root.protocol("WM_DELETE_WINDOW", self._on_close)
         self._configure_style()
-        self._state = tk.StringVar(value="尚未连接：点击‘连接并读取状态’后才会打开 COM4")
+        self._state = tk.StringVar(value=f"尚未连接：点击‘连接并读取状态’后才会打开 {self._port}")
         self._connection = tk.StringVar(value="未连接")
         self._grbl_state = tk.StringVar(value="—")
         self._position = tk.StringVar(value="X —   Y —   Z — mm")
@@ -679,7 +679,7 @@ class ProtocolMonitorApp:
         text.insert("end", "一条运动动作通常会产生这些事件\n", "section")
         for line in (
             ("1  CALL", "Python 调用 controller.jog(...)。这是程序内部的函数调用，还没有把运动文本写到线路上。"),
-            ("2  TX $J=...", "电脑把 ASCII 文本写到 COM4。G91 表示相对移动，G21 表示毫米，X/Y/Z 是移动量，F 是速度。"),
+            ("2  TX $J=...", "电脑把 ASCII 文本写到当前串口。G91 表示相对移动，G21 表示毫米，X/Y/Z 是移动量，F 是速度。"),
             ("3  RX ok", "GRBL 已经接受文本。它只是接收确认，不能证明机械运动已经结束。"),
             ("4  TX ?", "电脑发送一个实时查询字符，询问 GRBL 当前状态；它不是运动指令，不会让机器移动。"),
             ("5  RX <Jog|MPos:...>", "GRBL 报告自己还在 Jog 状态，并给出当前内部坐标。"),
@@ -834,7 +834,7 @@ class ProtocolMonitorApp:
         self._flow.delete("1.0", "end")
         if not self._history:
             self._flow.insert("end", "暂无真实事件\n", "summary")
-            self._flow.insert("end", "连接 COM4 后，先观察只读状态查询，再点击一个受限微动按钮。\n", "payload")
+            self._flow.insert("end", f"连接 {self._port} 后，先观察只读状态查询，再点击一个受限微动按钮。\n", "payload")
             self._flow.insert("end", "这里不会显示模拟通信。\n", "summary")
         for sequence, event, _explanation in self._history:
             header, payload, summary = format_stream_row(sequence, event)
