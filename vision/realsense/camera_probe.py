@@ -16,6 +16,7 @@ import numpy as np
 COLOR_WIDTH = 640
 COLOR_HEIGHT = 480
 FRAME_RATE = 30
+DEFAULT_DEPTH_SAMPLE_RADIUS = 5
 
 
 class CameraProbeError(RuntimeError):
@@ -39,6 +40,7 @@ class CameraSnapshot:
     pixel_uv: tuple[int, int]
     depth_m: float
     point_camera_m: tuple[float, float, float]
+    depth_sample_radius: int = DEFAULT_DEPTH_SAMPLE_RADIUS
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -58,6 +60,15 @@ def build_parser() -> argparse.ArgumentParser:
         default=30,
         help="Frames discarded before capture (default: 30)",
     )
+    parser.add_argument(
+        "--depth-sample-radius",
+        type=int,
+        default=DEFAULT_DEPTH_SAMPLE_RADIUS,
+        help=(
+            "Search radius around the color center for a valid depth sample "
+            f"(default: {DEFAULT_DEPTH_SAMPLE_RADIUS})"
+        ),
+    )
     return parser
 
 
@@ -67,12 +78,56 @@ def center_pixel(width: int, height: int) -> tuple[int, int]:
     return width // 2, height // 2
 
 
+def find_valid_depth_pixel(
+    depth_frame: Any,
+    *,
+    center: tuple[int, int],
+    width: int,
+    height: int,
+    radius: int,
+) -> tuple[int, int, float]:
+    """Return the nearest finite positive depth sample around ``center``."""
+    if radius < 0:
+        raise CameraProbeError("depth sample radius must be non-negative")
+    center_u, center_v = center
+    if not (0 <= center_u < width and 0 <= center_v < height):
+        raise CameraProbeError(f"center pixel is outside {width}x{height}: {center!r}")
+
+    for distance in range(radius + 1):
+        offsets = [
+            (du, dv)
+            for dv in range(-distance, distance + 1)
+            for du in range(-distance, distance + 1)
+            if max(abs(du), abs(dv)) == distance
+        ]
+        offsets.sort(key=lambda offset: (abs(offset[0]) + abs(offset[1]), offset[1], offset[0]))
+        for du, dv in offsets:
+            u = center_u + du
+            v = center_v + dv
+            if not (0 <= u < width and 0 <= v < height):
+                continue
+            depth_m = float(depth_frame.get_distance(u, v))
+            if math.isfinite(depth_m) and depth_m > 0:
+                return u, v, depth_m
+
+    raise CameraProbeError(
+        f"no valid depth within radius {radius} of pixel {center}: "
+        "all sampled depths were non-finite or zero"
+    )
+
+
 def capture_snapshot(
-    rs: Any, serial: str, *, warmup_frames: int
+    rs: Any,
+    serial: str,
+    *,
+    warmup_frames: int,
+    depth_sample_radius: int = DEFAULT_DEPTH_SAMPLE_RADIUS,
 ) -> tuple[CameraSnapshot, np.ndarray, np.ndarray]:
     normalized_serial = _validate_serial(serial)
     if warmup_frames < 0:
         raise CameraProbeError("warmup_frames must be non-negative")
+    if depth_sample_radius < 0:
+        raise CameraProbeError("depth_sample_radius must be non-negative")
 
     pipeline = rs.pipeline()
     config = rs.config()
@@ -111,9 +166,15 @@ def capture_snapshot(
         intrinsics = color_profile.get_intrinsics()
         color_width = int(color_profile.width())
         color_height = int(color_profile.height())
-        pixel_uv = center_pixel(color_width, color_height)
-        depth_m = float(depth_frame.get_distance(*pixel_uv))
-        _require_positive_finite(depth_m, "depth")
+        requested_pixel_uv = center_pixel(color_width, color_height)
+        sample_u, sample_v, depth_m = find_valid_depth_pixel(
+            depth_frame,
+            center=requested_pixel_uv,
+            width=color_width,
+            height=color_height,
+            radius=depth_sample_radius,
+        )
+        pixel_uv = (sample_u, sample_v)
         point = rs.rs2_deproject_pixel_to_point(
             intrinsics, [pixel_uv[0], pixel_uv[1]], depth_m
         )
@@ -144,6 +205,7 @@ def capture_snapshot(
             pixel_uv=pixel_uv,
             depth_m=depth_m,
             point_camera_m=point_camera_m,
+            depth_sample_radius=depth_sample_radius,
         )
         return snapshot, np.asanyarray(color_frame.get_data()).copy(), np.asanyarray(
             depth_frame.get_data()
@@ -186,6 +248,14 @@ def build_baseline_record(
                 "z": snapshot.point_camera_m[2],
             },
         },
+        "depth_sampling": {
+            "requested_pixel_uv": {
+                "u": snapshot.color_width // 2,
+                "v": snapshot.color_height // 2,
+            },
+            "strategy": "center_outward_first_valid",
+            "radius_px": snapshot.depth_sample_radius,
+        },
         "camera_coordinate_convention": {
             "x": "right",
             "y": "down",
@@ -227,7 +297,10 @@ def main() -> int:
         import pyrealsense2 as rs
 
         snapshot, color, depth = capture_snapshot(
-            rs, args.serial, warmup_frames=args.warmup_frames
+            rs,
+            args.serial,
+            warmup_frames=args.warmup_frames,
+            depth_sample_radius=args.depth_sample_radius,
         )
         captured_at_utc = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
         record = build_baseline_record(snapshot, captured_at_utc=captured_at_utc)

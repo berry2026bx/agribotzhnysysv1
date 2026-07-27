@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from vision.realsense import camera_probe
 from vision.realsense.camera_probe import (
     CameraProbeError,
     CameraSnapshot,
@@ -164,6 +165,19 @@ def test_center_pixel_uses_the_color_frame_dimensions() -> None:
     assert center_pixel(640, 480) == (320, 240)
 
 
+class SparseDepthFrame:
+    def get_distance(self, u: int, v: int) -> float:
+        if (u, v) == (319, 240):
+            return 0.75
+        return 0.0
+
+
+def test_find_valid_depth_pixel_falls_back_to_nearby_valid_sample() -> None:
+    assert camera_probe.find_valid_depth_pixel(
+        SparseDepthFrame(), center=(320, 240), width=640, height=480, radius=1
+    ) == (319, 240, 0.75)
+
+
 def test_capture_snapshot_locks_to_requested_camera_and_aligns_depth_to_color() -> None:
     rs = FakeRealSense()
 
@@ -199,6 +213,7 @@ def test_baseline_record_labels_metric_camera_coordinates() -> None:
         pixel_uv=(320, 240),
         depth_m=0.75,
         point_camera_m=(0.0, 0.0, 0.75),
+        depth_sample_radius=50,
     )
 
     record = build_baseline_record(snapshot, captured_at_utc="2026-07-27T00:00:00Z")
@@ -207,6 +222,7 @@ def test_baseline_record_labels_metric_camera_coordinates() -> None:
     assert record["alignment"] == {"source": "depth", "target": "color"}
     assert record["center_sample"]["depth_m"] == 0.75
     assert record["center_sample"]["point_camera_m"] == {"x": 0.0, "y": 0.0, "z": 0.75}
+    assert record["depth_sampling"]["radius_px"] == 50
     assert record["camera_coordinate_convention"] == {
         "x": "right",
         "y": "down",
