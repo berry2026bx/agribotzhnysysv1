@@ -83,6 +83,109 @@ class StatusExplanation:
     technical: str
 
 
+@dataclass(frozen=True)
+class ProtocolGuideEntry:
+    term: str
+    title: str
+    summary: str
+    detail: str
+    example: str
+
+
+PROTOCOL_GUIDE = (
+    ProtocolGuideEntry(
+        "串口",
+        "什么是串口？",
+        "电脑与控制板之间的一条有顺序的数据通道。",
+        "这里使用 USB 转 CH340 芯片，把电脑里的字节送到 Arduino/GRBL，再把返回字节送回来。",
+        "COM4 · 115200 baud · 8-N-1",
+    ),
+    ProtocolGuideEntry(
+        "115200",
+        "波特率",
+        "每秒传输的符号速度。",
+        "双方必须使用同一个速度；本机设置为 115200。速度不一致时，收到的字符会变成乱码或超时。",
+        "baudrate=115200",
+    ),
+    ProtocolGuideEntry(
+        "8-N-1",
+        "一帧串口的基本格式",
+        "8 个数据位、无校验、1 个停止位。",
+        "它规定一个字节怎样排成电信号；它不是 GRBL 指令内容，而是串口线路的约定。",
+        "8 data bits · No parity · 1 stop bit",
+    ),
+    ProtocolGuideEntry(
+        "GRBL",
+        "控制板里的运动固件",
+        "运行在 Arduino 上、负责把指令变成步进脉冲的软件。",
+        "Python 不直接控制 A4988 的每一个脉冲；Python 把指令交给 GRBL，GRBL 再管理运动状态和坐标。",
+        "Arduino UNO + GRBL 1.1f",
+    ),
+    ProtocolGuideEntry(
+        "TX",
+        "Transmit：电脑发出的数据",
+        "TX 行表示 Python 实际写入 COM4 的内容。",
+        "它是证据链中的‘发送’方向；界面中的 TX 不是预演，而是控制器写串口时记录的真实载荷。",
+        'TX  $J=G91 G21 X5 F100\\n',
+    ),
+    ProtocolGuideEntry(
+        "RX",
+        "Receive：控制板返回的数据",
+        "RX 行表示 Python 从 GRBL 实际读到的内容。",
+        "RX 可能是 ok、状态帧、error 或 ALARM；不同返回值代表不同阶段，不能只看一个 ok。",
+        "RX  <Idle|MPos:12.500,-3.000,4.000>",
+    ),
+    ProtocolGuideEntry(
+        "$J=",
+        "GRBL Jog 指令",
+        "请求 GRBL 做一次受限的相对移动。",
+        "本系统只允许这一类受限 Jog，不发送任意 G-code。换行符表示这条文本指令结束。",
+        "$J=G91 G21 X5 F100\\n",
+    ),
+    ProtocolGuideEntry(
+        "G91 / G21 / F",
+        "一条 Jog 指令的组成",
+        "相对坐标、毫米单位、移动速度。",
+        "G91 表示‘从当前位置移动这么多’；G21 表示单位是毫米；X/Y/Z 后面的数字是增量；F 是速度，单位 mm/min。",
+        "G91 · G21 · X5 · F100",
+    ),
+    ProtocolGuideEntry(
+        "ok",
+        "协议确认，不是完成证明",
+        "GRBL 表示它已经接收并接受了这一行。",
+        "电机可能仍在运动；控制器必须继续发送 ? 并等待最终 Idle。把 ok 当作完成是常见误读。",
+        "RX  ok",
+    ),
+    ProtocolGuideEntry(
+        "<Idle|MPos:…>",
+        "状态帧",
+        "GRBL 对当前运动状态的一次结构化报告。",
+        "尖括号是帧边界；第一个字段是状态；MPos 后的三个数依次是 X/Y/Z。其它字段可能包含速度或缓冲区信息。",
+        "<Idle|MPos:12.500,-3.000,4.000|FS:0,0>",
+    ),
+    ProtocolGuideEntry(
+        "MPos",
+        "机器坐标字段",
+        "GRBL 固件内部记录的 X/Y/Z 位置。",
+        "它不是编码器测量值，也不自动知道手工标记的 P0；重新连接或人为移动后，必须重新确认物理参考。",
+        "MPos:X,Y,Z",
+    ),
+    ProtocolGuideEntry(
+        "P0",
+        "实验中的手动参考点",
+        "用标记物理位置建立的起始参考。",
+        "P0 不是 GRBL 的硬件回零，也不是编码器原点；本系统用它约束已测量的 XY 工作范围。",
+        "X[-190,190] · Y[-90,140] mm",
+    ),
+)
+
+
+def protocol_guide() -> tuple[ProtocolGuideEntry, ...]:
+    """Return the stable glossary used by the optional protocol dictionary window."""
+
+    return PROTOCOL_GUIDE
+
+
 def explain_trace_event(event: TraceEvent) -> TeachingExplanation:
     """Turn an observed event into plain-language and protocol-level teaching text."""
 
@@ -315,7 +418,7 @@ class ProtocolMonitorApp:
         self._position = tk.StringVar(value="X —   Y —   Z — mm")
         self._event_counter = tk.StringVar(value="0 条真实事件")
         self._takeaway_heading = tk.StringVar(value="等待第一条真实通信")
-        self._takeaway_plain = tk.StringVar(value="连接后，老师可以按一次按钮，屏幕会把这一次动作拆成 Python、TX、RX、坐标和完成状态。")
+        self._takeaway_plain = tk.StringVar(value="连接后，按一次动作按钮，屏幕会把这一次动作拆成 Python、TX、RX、坐标和完成状态。")
         self._takeaway_technical = tk.StringVar(value="当前没有串口数据。界面不会生成模拟数据。")
         self._code = tk.StringVar(value="等待真实 CALL / TX / RX")
         self._raw_frame = tk.StringVar(value="原始帧：—")
@@ -361,6 +464,7 @@ class ProtocolMonitorApp:
         self._metric(metrics, "连接", self._connection, 1, self.TEAL)
         self._metric(metrics, "GRBL 状态", self._grbl_state, 2, self.AMBER)
         self._metric(metrics, "实时坐标", self._position, 3, self.BLUE)
+        ttk.Button(metrics, text="打开协议词典", style="Action.TButton", command=self._open_protocol_guide).grid(row=0, column=4, rowspan=2, padx=(26, 0), sticky="e")
 
         takeaway = tk.Frame(outer, bg="#e8f3f7", highlightbackground="#b6d5df", highlightthickness=1)
         takeaway.grid(row=1, column=0, sticky="ew", pady=(0, 16))
@@ -422,7 +526,7 @@ class ProtocolMonitorApp:
         panel.rowconfigure(2, weight=1)
         self._label(panel, "02  通信过程", size=10, color=self.BLUE, bold=True).grid(row=0, column=0, sticky="w", padx=16, pady=(16, 1))
         self._label(panel, "每一行都来自真实串口", size=14, bold=True).grid(row=1, column=0, sticky="w", padx=16, pady=(0, 9))
-        self._flow = scrolledtext.ScrolledText(panel, height=18, wrap="word", state="disabled", bg="#f8fbfd", fg=self.TEXT, relief="flat", bd=0, padx=14, pady=12, font=("Microsoft YaHei UI", 10))
+        self._flow = scrolledtext.ScrolledText(panel, height=18, wrap="word", state="disabled", bg="#f8fbfd", fg=self.TEXT, relief="flat", bd=0, padx=14, pady=12, font=("Microsoft YaHei UI", 10), spacing1=1, spacing3=4)
         self._flow.grid(row=2, column=0, sticky="nsew", padx=14, pady=(0, 10))
         self._flow.tag_configure("number", foreground=self.MUTED, font=("Consolas", 9, "bold"))
         self._flow.tag_configure("call", foreground=self.BLUE, font=("Consolas", 9, "bold"))
@@ -437,7 +541,7 @@ class ProtocolMonitorApp:
         tk.Label(detail, textvariable=self._code, bg="#f0f6fa", fg=self.TEXT, font=("Consolas", 10), anchor="w", justify="left", wraplength=670).grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 9))
         raw = tk.Frame(panel, bg="#fffaf0", highlightbackground="#ecd7ac", highlightthickness=1)
         raw.grid(row=4, column=0, sticky="ew", padx=14, pady=(0, 14))
-        tk.Label(raw, text="原始帧（可复制给老师核对）", bg="#fffaf0", fg=self.AMBER, font=("Microsoft YaHei UI", 9, "bold")).pack(anchor="w", padx=12, pady=(8, 2))
+        tk.Label(raw, text="原始帧（可复制、逐字核对）", bg="#fffaf0", fg=self.AMBER, font=("Microsoft YaHei UI", 9, "bold")).pack(anchor="w", padx=12, pady=(8, 2))
         tk.Label(raw, textvariable=self._raw_frame, bg="#fffaf0", fg=self.TEXT, font=("Consolas", 9), anchor="w", justify="left", wraplength=670).pack(anchor="w", padx=12, pady=(0, 9))
 
     def _build_coordinates(self, parent: tk.Frame) -> None:
@@ -501,6 +605,38 @@ class ProtocolMonitorApp:
         if self._worker is not None:
             self._state.set(f"已提交真实动作 · {axis}{distance_mm:g} mm · 等待真实 CALL/TX/RX")
             self._worker.request_jog(axis, distance_mm, feed_mm_min)
+
+    def _open_protocol_guide(self) -> None:
+        existing = getattr(self, "_guide_window", None)
+        if existing is not None and existing.winfo_exists():
+            existing.deiconify()
+            existing.lift()
+            return
+        guide = tk.Toplevel(self._root)
+        self._guide_window = guide
+        guide.title("DayuWriter · 串口与 GRBL 协议词典")
+        guide.geometry("980x760")
+        guide.minsize(760, 560)
+        guide.configure(bg=self.BG)
+        guide.columnconfigure(0, weight=1)
+        guide.rowconfigure(2, weight=1)
+        tk.Label(guide, text="串口与 GRBL 协议词典", bg=self.BG, fg=self.TEXT, font=("Microsoft YaHei UI", 21, "bold")).grid(row=0, column=0, sticky="w", padx=24, pady=(22, 2))
+        tk.Label(guide, text="从‘电脑怎样把一句话送到机器’开始，逐项解释本系统会看到的每一种数据。", bg=self.BG, fg=self.MUTED, font=("Microsoft YaHei UI", 11), anchor="w").grid(row=1, column=0, sticky="ew", padx=24, pady=(0, 16))
+        text = scrolledtext.ScrolledText(guide, wrap="word", bg="#ffffff", fg=self.TEXT, relief="flat", bd=0, padx=24, pady=18, font=("Microsoft YaHei UI", 11), spacing1=2, spacing3=5)
+        text.grid(row=2, column=0, sticky="nsew", padx=24, pady=(0, 18))
+        text.tag_configure("term", foreground=self.NAVY, font=("Microsoft YaHei UI", 14, "bold"), spacing1=12)
+        text.tag_configure("summary", foreground=self.TEXT, font=("Microsoft YaHei UI", 11, "bold"))
+        text.tag_configure("detail", foreground=self.TEXT)
+        text.tag_configure("example", foreground=self.AMBER, font=("Consolas", 10))
+        text.insert("end", "数据方向\n", "term")
+        text.insert("end", "TX 表示电脑发出，RX 表示控制板返回。界面中的内容来自真实 pySerial 读写，不是预先写好的动画。\n\n", "detail")
+        for entry in protocol_guide():
+            text.insert("end", f"{entry.term}  ·  {entry.title}\n", "term")
+            text.insert("end", f"{entry.summary}\n", "summary")
+            text.insert("end", f"{entry.detail}\n", "detail")
+            text.insert("end", f"示例：{entry.example}\n\n", "example")
+        text.configure(state="disabled")
+        guide.protocol("WM_DELETE_WINDOW", lambda: (guide.destroy(), setattr(self, "_guide_window", None)))
 
     def _drain_events(self) -> None:
         while True:
@@ -571,7 +707,7 @@ class ProtocolMonitorApp:
             tag = "call" if event.kind == "CALL" else "tx" if event.kind == "TX" else "rx"
             self._flow.insert("end", f"#{sequence:02d}  {label}\n", ("number", tag))
             self._flow.insert("end", f"     {text}\n", "technical")
-            self._flow.insert("end", f"     老师先看：{explanation.plain}\n", "explain")
+            self._flow.insert("end", f"     直观解释：{explanation.plain}\n", "explain")
             self._flow.insert("end", f"     技术含义：{explanation.technical}\n\n", "technical")
         self._flow.see("end")
         self._flow.configure(state="disabled")

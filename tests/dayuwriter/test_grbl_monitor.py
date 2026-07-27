@@ -8,6 +8,7 @@ from communication.dayuwriter.grbl_monitor import (
     explain_trace_event,
     event_stage,
     format_trace_event,
+    protocol_guide,
     validate_monitor_motion,
 )
 
@@ -69,3 +70,10 @@ def test_status_explanation_exposes_real_coordinate_and_state() -> None:
     assert explanation.position.x == 12.5
     assert "X=12.5" in explanation.plain
     assert "MPos" in explanation.technical
+
+
+def test_protocol_guide_covers_serial_grbl_and_status_line_basics() -> None:
+    entries = protocol_guide()
+    terms = {entry.term for entry in entries}
+    assert {"串口", "GRBL", "TX", "RX", "MPos", "ok"}.issubset(terms)
+    assert all(entry.summary and entry.detail for entry in entries)
