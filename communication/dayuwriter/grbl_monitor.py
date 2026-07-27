@@ -522,21 +522,50 @@ class GrblWorker:
             self._events.put(("disconnected", None))
 
 
+class ScrollableContent(tk.Frame):
+    """A vertical page viewport with a visible, draggable scrollbar."""
+
+    def __init__(self, parent: tk.Widget, *, background: str) -> None:
+        super().__init__(parent, bg=background)
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure(0, weight=1)
+        self.canvas = tk.Canvas(self, bg=background, bd=0, highlightthickness=0)
+        self.canvas.grid(row=0, column=0, sticky="nsew")
+        self.scrollbar = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
+        self.scrollbar.grid(row=0, column=1, sticky="ns", padx=(4, 0))
+        self.canvas.configure(yscrollcommand=self.scrollbar.set)
+        self.content = tk.Frame(self.canvas, bg=background)
+        self._content_window = self.canvas.create_window((0, 0), window=self.content, anchor="nw")
+        self.content.bind("<Configure>", self._update_scroll_region)
+        self.canvas.bind("<Configure>", self._fit_content_width)
+        self.canvas.bind("<MouseWheel>", self._mousewheel)
+
+    def _update_scroll_region(self, _event: tk.Event[tk.Misc]) -> None:
+        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+
+    def _fit_content_width(self, event: tk.Event[tk.Misc]) -> None:
+        self.canvas.itemconfigure(self._content_window, width=event.width)
+
+    def _mousewheel(self, event: tk.Event[tk.Misc]) -> str:
+        self.canvas.yview_scroll(-int(event.delta / 120), "units")
+        return "break"
+
+
 class ProtocolMonitorApp:
     """A calm three-page desktop classroom for real GRBL events."""
 
-    BG = "#f6f8f9"
+    BG = "#eef3f4"
     SURFACE = "#ffffff"
-    SURFACE_ALT = "#f1f4f5"
-    BORDER = "#d7dfe3"
-    TEXT = "#1f2933"
-    MUTED = "#62717b"
-    NAVY = "#1d4e89"
-    TEAL = "#0b6e69"
-    BLUE = "#2563eb"
-    PURPLE = "#6d28d9"
-    GREEN = "#1f7a45"
-    AMBER = "#b54708"
+    SURFACE_ALT = "#f5f7f7"
+    BORDER = "#cdd8da"
+    TEXT = "#172b34"
+    MUTED = "#5f6f73"
+    NAVY = "#0b7285"
+    TEAL = "#087f5b"
+    BLUE = "#4263eb"
+    PURPLE = "#7048e8"
+    GREEN = "#2b8a3e"
+    AMBER = "#e67700"
     RED = "#b42318"
 
     def __init__(self, root: tk.Tk, port: str) -> None:
@@ -578,11 +607,11 @@ class ProtocolMonitorApp:
         style = ttk.Style(self._root)
         style.theme_use("clam")
         style.configure("Action.TButton", background=self.NAVY, foreground="#ffffff", padding=(12, 10), font=("Microsoft YaHei UI", 10, "bold"))
-        style.map("Action.TButton", background=[("active", "#236b9e"), ("disabled", "#a9b9c4")])
+        style.map("Action.TButton", background=[("active", "#0f8fa6"), ("disabled", "#b8c6c7")])
         style.configure("Move.TButton", background=self.SURFACE_ALT, foreground=self.TEXT, padding=(8, 8), font=("Microsoft YaHei UI", 10))
-        style.map("Move.TButton", background=[("active", "#d9e9f3"), ("disabled", "#f0f2f4")])
+        style.map("Move.TButton", background=[("active", "#d9eee7"), ("disabled", "#edf1f1")])
         style.configure("TNotebook", background=self.BG, borderwidth=0)
-        style.configure("TNotebook.Tab", background="#e6edf2", foreground=self.MUTED, padding=(18, 9), font=("Microsoft YaHei UI", 10, "bold"))
+        style.configure("TNotebook.Tab", background="#dce5e5", foreground=self.MUTED, padding=(18, 9), font=("Microsoft YaHei UI", 10, "bold"))
         style.map("TNotebook.Tab", background=[("selected", self.SURFACE)], foreground=[("selected", self.NAVY)])
 
     def _panel(self, parent: tk.Widget, row: int, column: int, *, padx: tuple[int, int] = (0, 0)) -> tk.Frame:
@@ -638,15 +667,20 @@ class ProtocolMonitorApp:
         tk.Label(block, bg=self.BG, fg=color, font=("Consolas", 11, "bold"), **kwargs).pack(anchor="e")
 
     def _build_live_page(self, parent: tk.Frame) -> None:
-        parent.columnconfigure(0, weight=0, minsize=285)
-        parent.columnconfigure(1, weight=1, minsize=640)
-        parent.columnconfigure(2, weight=0, minsize=410)
-        parent.rowconfigure(0, weight=0)
-        parent.rowconfigure(1, weight=1)
-        self._build_causal_chain(parent)
-        self._build_controls(parent, 1)
-        self._build_stream(parent, 1)
-        self._build_current_detail(parent, 1)
+        parent.columnconfigure(0, weight=1)
+        parent.rowconfigure(0, weight=1)
+        self._live_scroll = ScrollableContent(parent, background=self.BG)
+        self._live_scroll.grid(row=0, column=0, sticky="nsew")
+        content = self._live_scroll.content
+        content.columnconfigure(0, weight=0, minsize=285)
+        content.columnconfigure(1, weight=1, minsize=640)
+        content.columnconfigure(2, weight=0, minsize=410)
+        content.rowconfigure(0, weight=0)
+        content.rowconfigure(1, weight=1)
+        self._build_causal_chain(content)
+        self._build_controls(content, 1)
+        self._build_stream(content, 1)
+        self._build_current_detail(content, 1)
 
     def _build_causal_chain(self, parent: tk.Frame) -> None:
         band = tk.Frame(parent, bg=self.SURFACE, highlightbackground=self.BORDER, highlightthickness=1)
@@ -698,7 +732,7 @@ class ProtocolMonitorApp:
         panel.rowconfigure(4, weight=2)
         self._label(panel, "真实通信证据", size=10, color=self.BLUE, bold=True).grid(row=0, column=0, sticky="w", padx=16, pady=(18, 2))
         self._label(panel, "谁发出、发给谁、原文是什么", size=15, bold=True).grid(row=1, column=0, sticky="w", padx=16, pady=(0, 10))
-        self._flow = scrolledtext.ScrolledText(panel, height=14, wrap="word", state="disabled", bg="#f8fbfd", fg=self.TEXT, relief="flat", bd=0, padx=14, pady=14, font=("Consolas", 10), spacing1=2, spacing3=5)
+        self._flow = scrolledtext.ScrolledText(panel, height=14, wrap="word", state="disabled", bg="#f8faf9", fg=self.TEXT, relief="flat", bd=0, padx=14, pady=14, font=("Consolas", 10), spacing1=2, spacing3=5)
         self._flow.grid(row=2, column=0, sticky="nsew", padx=14, pady=(0, 14))
         self._flow.tag_configure("call", foreground=self.BLUE, font=("Consolas", 10, "bold"))
         self._flow.tag_configure("tx", foreground=self.AMBER, font=("Consolas", 10, "bold"))
@@ -714,7 +748,7 @@ class ProtocolMonitorApp:
         self._trajectory_canvas = tk.Canvas(history, height=168, bg="#ffffff", bd=0, highlightbackground=self.BORDER, highlightthickness=1)
         self._trajectory_canvas.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
         self._trajectory_canvas.bind("<Configure>", lambda _event: self._draw_coordinate_history())
-        self._position_history_text = scrolledtext.ScrolledText(history, height=9, wrap="word", state="disabled", bg="#f8fbfd", fg=self.TEXT, relief="flat", bd=0, padx=12, pady=10, font=("Consolas", 9), spacing1=2, spacing3=3)
+        self._position_history_text = scrolledtext.ScrolledText(history, height=9, wrap="word", state="disabled", bg="#f8faf9", fg=self.TEXT, relief="flat", bd=0, padx=12, pady=10, font=("Consolas", 9), spacing1=2, spacing3=3)
         self._position_history_text.grid(row=0, column=1, sticky="nsew")
         self._position_history_text.tag_configure("sample", foreground=self.TEAL, font=("Consolas", 9, "bold"))
         self._position_history_text.tag_configure("change", foreground=self.TEXT)
@@ -801,7 +835,7 @@ class ProtocolMonitorApp:
             fill = self.NAVY if active else "#ffffff"
             outline = self.NAVY if active else self.BORDER
             title_color = "#ffffff" if active else self.TEXT
-            detail_color = "#dcecf7" if active else self.MUTED
+            detail_color = "#e7f5f3" if active else self.MUTED
             if index:
                 canvas.create_line(left - gap + 2, 35, left - 3, 35, fill=self.TEAL if active else self.BORDER, width=2, arrow="last")
             canvas.create_rectangle(left, top, right, bottom, fill=fill, outline=outline, width=2 if active else 1)
@@ -817,8 +851,8 @@ class ProtocolMonitorApp:
         height = max(canvas.winfo_height(), 150)
         left, top, right, bottom = 42, 22, width - 20, height - 30
         canvas.create_rectangle(left, top, right, bottom, outline=self.BORDER, fill="#ffffff")
-        canvas.create_line(left, (top + bottom) / 2, right, (top + bottom) / 2, fill="#e5edf2")
-        canvas.create_line((left + right) / 2, top, (left + right) / 2, bottom, fill="#e5edf2")
+        canvas.create_line(left, (top + bottom) / 2, right, (top + bottom) / 2, fill="#e2e9e8")
+        canvas.create_line((left + right) / 2, top, (left + right) / 2, bottom, fill="#e2e9e8")
         canvas.create_text(left, top - 10, text="Y+ 前", fill=self.TEAL, anchor="w", font=("Consolas", 8, "bold"))
         canvas.create_text(left - 5, bottom, text="Y− 后", fill=self.MUTED, anchor="e", font=("Consolas", 8))
         canvas.create_text(right, bottom + 12, text="X+ 右", fill=self.NAVY, anchor="e", font=("Consolas", 8, "bold"))
@@ -871,8 +905,8 @@ class ProtocolMonitorApp:
         for fraction in (0.25, 0.5, 0.75):
             x = left + (right - left) * fraction
             y = top + (bottom - top) * fraction
-            canvas.create_line(x, top, x, bottom, fill="#e5edf2")
-            canvas.create_line(left, y, right, y, fill="#e5edf2")
+            canvas.create_line(x, top, x, bottom, fill="#e2e9e8")
+            canvas.create_line(left, y, right, y, fill="#e2e9e8")
         canvas.create_line(left, bottom, right, bottom, fill=self.NAVY, width=2, arrow="last")
         canvas.create_line(left, bottom, left, top, fill=self.NAVY, width=2, arrow="last")
         canvas.create_text(right, bottom + 22, text="X+ 右", fill=self.NAVY, anchor="e", font=("Consolas", 10, "bold"))

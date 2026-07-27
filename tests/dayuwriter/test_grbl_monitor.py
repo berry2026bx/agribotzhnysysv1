@@ -3,6 +3,7 @@ import pytest
 
 from communication.dayuwriter.grbl_monitor import (
     BUTTON_ACTIONS,
+    ScrollableContent,
     record_coordinate_status,
     describe_trace_event,
     explain_status,
@@ -15,6 +16,21 @@ from communication.dayuwriter.grbl_monitor import (
     protocol_guide,
     validate_monitor_motion,
 )
+
+
+def test_scrollable_content_exposes_a_canvas_and_vertical_scrollbar() -> None:
+    import tkinter as tk
+    from tkinter import ttk
+
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        content = ScrollableContent(root, background="#ffffff")
+        assert isinstance(content.canvas, tk.Canvas)
+        assert isinstance(content.scrollbar, ttk.Scrollbar)
+        assert content.content.master is content.canvas
+    finally:
+        root.destroy()
 
 
 def test_monitor_formats_real_serial_events_for_display() -> None:
