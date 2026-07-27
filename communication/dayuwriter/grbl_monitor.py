@@ -10,7 +10,7 @@ from tkinter import scrolledtext, ttk
 
 from .grbl_controller import ControllerError, GrblController, TraceEvent
 from .grbl_protocol import JogCommand
-from .workspace import parse_mpos, validate_xy_target
+from .workspace import Position, parse_mpos, validate_xy_target
 
 
 BUTTON_ACTIONS: dict[str, tuple[str, float, float]] = {
@@ -62,6 +62,106 @@ def describe_trace_event(event: TraceEvent) -> str:
         "running": "GRBL 报告运动仍在进行",
         "complete": "GRBL 报告 Idle，控制周期已完成",
     }[stage]
+
+
+@dataclass(frozen=True)
+class TeachingExplanation:
+    """One live event explained for a teacher and for a developer."""
+
+    stage: str
+    heading: str
+    plain: str
+    technical: str
+    code: str
+
+
+@dataclass(frozen=True)
+class StatusExplanation:
+    state: str
+    position: object
+    plain: str
+    technical: str
+
+
+def explain_trace_event(event: TraceEvent) -> TeachingExplanation:
+    """Turn an observed event into plain-language and protocol-level teaching text."""
+
+    stage = event_stage(event)
+    text = event.text.strip()
+    if event.kind == "CALL":
+        if "jog" in text.lower():
+            return TeachingExplanation(
+                stage,
+                "Python 发起一次相对移动",
+                "按钮已经进入 Python；Python 正在调用一个保持连接的控制器。",
+                "控制器会先读取 Idle 状态，再写入受限的 GRBL Jog 指令。",
+                "controller.jog(JogCommand(...))",
+            )
+        if "status" in text.lower():
+            return TeachingExplanation(
+                stage,
+                "Python 请求读取状态",
+                "这一步只问机器现在怎么样，不要求它移动。",
+                "状态请求使用 GRBL 的实时查询字符 ?，随后等待状态帧。",
+                "controller.status()",
+            )
+        return TeachingExplanation(stage, "Python 控制器动作", "Python 正在管理串口连接。", text, text)
+    if event.kind == "TX":
+        if text == "?":
+            return TeachingExplanation(
+                stage,
+                "Python 询问实时状态",
+                "问 GRBL：你现在是空闲、运动中，还是报警？这一步不会移动机器。",
+                "? 是 GRBL 实时状态查询字节，不是普通 G-code；它不需要换行。",
+                'serial.write(b"?")',
+            )
+        code = f'serial.write(b"{text}\\n")'
+        return TeachingExplanation(
+            stage,
+            "Python 发出运动指令",
+            "这句话告诉 GRBL：做一次相对移动，沿哪个轴、移动多少毫米、用多快的速度移动。",
+            "G91=相对坐标；G21=毫米；轴值是本次增量；F=进给速度；末尾换行表示一条指令结束。",
+            code,
+        )
+    if event.kind == "RX":
+        if text == "ok":
+            return TeachingExplanation(
+                stage,
+                "GRBL 已收到指令",
+                "GRBL 说‘我收到了’，但电机可能还在运动，所以还不能宣布完成。",
+                "ok 是协议层确认（acknowledgement），不是位置反馈，也不是动作完成信号。",
+                "response == b\"ok\\r\\n\"",
+            )
+        if text.startswith("<"):
+            state = text.strip("<>").split("|", 1)[0]
+            if state == "Idle":
+                return TeachingExplanation(
+                    stage,
+                    "GRBL 报告动作完成",
+                    "GRBL 现在回到 Idle，说明这次控制循环已经结束；屏幕上的坐标是固件报告的位置。",
+                    "状态帧以 < 开始，以 > 结束；Idle 是状态字段，MPos 是 GRBL 内部的位置记录。",
+                    f"status = {text!r}",
+                )
+            return TeachingExplanation(
+                stage,
+                f"GRBL 状态：{state}",
+                "机器还没有回到空闲状态，控制器会继续询问，直到收到 Idle。",
+                "状态帧的第一个字段是状态机状态；非 Idle 不能当作动作完成。",
+                f"status = {text!r}",
+            )
+        if text.startswith("error:") or text.startswith("ALARM:"):
+            return TeachingExplanation(stage, "GRBL 拒绝或报警", "机器没有接受这一步，请先处理错误，再继续移动。", "GRBL 返回错误帧；控制器会停止本次动作。", f"response = {text!r}")
+    return TeachingExplanation(stage, "收到一条串口事件", "屏幕保留了原始内容，但暂时没有更高层解释。", "未分类 TraceEvent。", repr(text))
+
+
+def explain_status(status_raw: str) -> StatusExplanation:
+    """Explain a real GRBL status frame and expose its parsed coordinates."""
+
+    state = status_raw.strip("<>").split("|", 1)[0]
+    position = parse_mpos(status_raw)
+    plain = f"GRBL 当前是 {state}。它报告 X={position.x:g} mm、Y={position.y:g} mm、Z={position.z:g} mm。"
+    technical = "MPos 是 GRBL 固件内部的位置记录；它不是编码器测量值，也不会替代重新对齐 P0。"
+    return StatusExplanation(state, position, plain, technical)
 
 
 @dataclass(frozen=True)
@@ -176,18 +276,21 @@ class GrblWorker:
 
 
 class ProtocolMonitorApp:
-    """Teacher-facing live console; all chain updates come from real trace events."""
+    """Light teacher-facing console driven only by observed controller events."""
 
-    BG = "#07111d"
-    SURFACE = "#0d1b2a"
-    SURFACE_2 = "#11263a"
-    BORDER = "#23415a"
-    TEXT = "#e8f1f7"
-    MUTED = "#8ea6b8"
-    GREEN = "#36d399"
-    AMBER = "#f4b860"
-    BLUE = "#63b3ed"
-    RED = "#ff6b6b"
+    BG = "#f3f6fa"
+    SURFACE = "#ffffff"
+    SURFACE_ALT = "#eef4f8"
+    BORDER = "#d4e0e8"
+    TEXT = "#183043"
+    MUTED = "#607687"
+    NAVY = "#184e77"
+    TEAL = "#0f766e"
+    BLUE = "#2563eb"
+    PURPLE = "#6941c6"
+    GREEN = "#16803c"
+    AMBER = "#b45309"
+    RED = "#b42318"
 
     def __init__(self, root: tk.Tk, port: str) -> None:
         self._root = root
@@ -195,137 +298,192 @@ class ProtocolMonitorApp:
         self._events: queue.Queue[tuple[str, object]] = queue.Queue()
         self._worker: GrblWorker | None = None
         self._motion_buttons: list[ttk.Button] = []
+        self._history: list[tuple[int, TraceEvent, TeachingExplanation]] = []
+        self._sequence = 0
+        self._current_position = Position(0.0, 0.0, 0.0)
 
-        self._root.title("DayuWriter · 现场演示台 · 真实 GRBL 串口")
-        self._root.minsize(1180, 760)
+        self._root.title("DayuWriter · 通信课堂 · 真实 GRBL 数据")
+        self._root.geometry("1500x980")
+        self._root.minsize(1280, 820)
         self._root.configure(bg=self.BG)
         self._root.protocol("WM_DELETE_WINDOW", self._on_close)
         self._configure_style()
 
-        self._state = tk.StringVar(value="未连接 · 串口尚未打开 · 不会自动运动")
-        self._connection = tk.StringVar(value="OFFLINE")
+        self._state = tk.StringVar(value="尚未连接：点击左侧按钮后才会打开 COM4")
+        self._connection = tk.StringVar(value="未连接")
         self._grbl_state = tk.StringVar(value="—")
-        self._position = tk.StringVar(value="MPos  —")
-        self._explanation = tk.StringVar(value="点击“连接并读取状态”后，屏幕将只显示真实串口证据。")
-        self._last_event = tk.StringVar(value="等待真实 TraceEvent")
+        self._position = tk.StringVar(value="X —   Y —   Z — mm")
+        self._event_counter = tk.StringVar(value="0 条真实事件")
+        self._takeaway_heading = tk.StringVar(value="等待第一条真实通信")
+        self._takeaway_plain = tk.StringVar(value="连接后，老师可以按一次按钮，屏幕会把这一次动作拆成 Python、TX、RX、坐标和完成状态。")
+        self._takeaway_technical = tk.StringVar(value="当前没有串口数据。界面不会生成模拟数据。")
+        self._code = tk.StringVar(value="等待真实 CALL / TX / RX")
+        self._raw_frame = tk.StringVar(value="原始帧：—")
+        self._coord_plain = tk.StringVar(value="等待 GRBL 返回 MPos")
+        self._coord_technical = tk.StringVar(value="MPos 是 GRBL 内部位置记录，不是编码器反馈。")
         self._build_ui()
         self._root.after(100, self._drain_events)
 
     def _configure_style(self) -> None:
         style = ttk.Style(self._root)
         style.theme_use("clam")
-        style.configure("TFrame", background=self.BG)
-        style.configure("Accent.TButton", background="#1d8064", foreground="#ffffff", padding=(14, 9), font=("Microsoft YaHei UI", 10, "bold"))
-        style.map("Accent.TButton", background=[("active", "#28a67e"), ("disabled", "#18382f")])
-        style.configure("Motion.TButton", background=self.SURFACE_2, foreground=self.TEXT, padding=(10, 8), font=("Microsoft YaHei UI", 10))
-        style.map("Motion.TButton", background=[("active", "#1b405b"), ("disabled", "#132332")])
+        style.configure("Light.TFrame", background=self.BG)
+        style.configure("Action.TButton", background=self.NAVY, foreground="#ffffff", padding=(12, 10), font=("Microsoft YaHei UI", 10, "bold"))
+        style.map("Action.TButton", background=[("active", "#236b9e"), ("disabled", "#a9b9c4")])
+        style.configure("Move.TButton", background=self.SURFACE_ALT, foreground=self.TEXT, padding=(8, 8), font=("Microsoft YaHei UI", 10))
+        style.map("Move.TButton", background=[("active", "#d9e9f3"), ("disabled", "#f0f2f4")])
+
+    def _panel(self, parent: tk.Widget, row: int, column: int, *, padx: tuple[int, int] = (0, 0)) -> tk.Frame:
+        frame = tk.Frame(parent, bg=self.SURFACE, highlightbackground=self.BORDER, highlightthickness=1)
+        frame.grid(row=row, column=column, sticky="nsew", padx=padx)
+        return frame
+
+    def _label(self, parent: tk.Widget, text: str, *, size: int = 10, color: str | None = None, bold: bool = False, **kwargs: object) -> tk.Label:
+        return tk.Label(parent, text=text, bg=self.SURFACE, fg=color or self.TEXT, font=("Microsoft YaHei UI", size, "bold" if bold else "normal"), **kwargs)
 
     def _build_ui(self) -> None:
         self._root.columnconfigure(0, weight=1)
         self._root.rowconfigure(0, weight=1)
-        outer = ttk.Frame(self._root, padding=18)
+        outer = tk.Frame(self._root, bg=self.BG, padx=24, pady=20)
         outer.grid(row=0, column=0, sticky="nsew")
         outer.columnconfigure(0, weight=1)
         outer.rowconfigure(2, weight=1)
 
         header = tk.Frame(outer, bg=self.BG)
-        header.grid(row=0, column=0, sticky="ew", pady=(0, 14))
+        header.grid(row=0, column=0, sticky="ew", pady=(0, 16))
         header.columnconfigure(1, weight=1)
-        tk.Label(header, text="DAYUWRITER / LIVE BENCH", bg=self.BG, fg=self.GREEN, font=("Consolas", 10, "bold")).grid(row=0, column=0, sticky="w")
-        tk.Label(header, text="真实 GRBL 通信现场演示台", bg=self.BG, fg=self.TEXT, font=("Microsoft YaHei UI", 19, "bold")).grid(row=1, column=0, sticky="w")
-        tk.Label(header, text="按钮 → Python → 串口 TX/RX → GRBL → 步进电机", bg=self.BG, fg=self.MUTED, font=("Microsoft YaHei UI", 10)).grid(row=2, column=0, sticky="w")
-        meta = tk.Frame(header, bg=self.BG)
-        meta.grid(row=0, column=1, rowspan=3, sticky="e")
-        self._metric(meta, "PORT", self._port, 0)
-        self._metric(meta, "LINK", self._connection, 1)
-        self._metric(meta, "GRBL", self._grbl_state, 2)
-        self._metric(meta, "POSITION", self._position, 3)
+        tk.Label(header, text="DAYUWRITER  /  COMMUNICATION CLASSROOM", bg=self.BG, fg=self.TEAL, font=("Consolas", 10, "bold")).grid(row=0, column=0, sticky="w")
+        tk.Label(header, text="真实 GRBL 通信课堂", bg=self.BG, fg=self.TEXT, font=("Microsoft YaHei UI", 24, "bold")).grid(row=1, column=0, sticky="w", pady=(2, 0))
+        tk.Label(header, text="把一次按钮操作拆开：Python 代码 → 串口字节 → GRBL 状态 → 真实坐标", bg=self.BG, fg=self.MUTED, font=("Microsoft YaHei UI", 11)).grid(row=2, column=0, sticky="w", pady=(3, 0))
+        metrics = tk.Frame(header, bg=self.BG)
+        metrics.grid(row=0, column=1, rowspan=3, sticky="e")
+        self._metric(metrics, "串口", self._port, 0, self.NAVY)
+        self._metric(metrics, "连接", self._connection, 1, self.TEAL)
+        self._metric(metrics, "GRBL 状态", self._grbl_state, 2, self.AMBER)
+        self._metric(metrics, "实时坐标", self._position, 3, self.BLUE)
 
-        chain_panel = tk.Frame(outer, bg=self.SURFACE, highlightbackground=self.BORDER, highlightthickness=1)
-        chain_panel.grid(row=1, column=0, sticky="ew", pady=(0, 14))
-        chain_panel.columnconfigure(0, weight=1)
-        tk.Label(chain_panel, text="01 / 因果链 · 每个节点由真实事件点亮", bg=self.SURFACE, fg=self.MUTED, font=("Consolas", 9, "bold")).grid(row=0, column=0, sticky="w", padx=16, pady=(13, 0))
-        self._chain = tk.Canvas(chain_panel, height=146, bg=self.SURFACE, bd=0, highlightthickness=0)
-        self._chain.grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 4))
-        self._chain.bind("<Configure>", lambda _event: self._draw_chain())
-        tk.Label(chain_panel, textvariable=self._explanation, bg=self.SURFACE, fg=self.AMBER, anchor="w", font=("Microsoft YaHei UI", 10, "bold")).grid(row=2, column=0, sticky="ew", padx=16, pady=(3, 13))
+        takeaway = tk.Frame(outer, bg="#e8f3f7", highlightbackground="#b6d5df", highlightthickness=1)
+        takeaway.grid(row=1, column=0, sticky="ew", pady=(0, 16))
+        takeaway.columnconfigure(1, weight=1)
+        tk.Label(takeaway, text="当前结论", bg="#e8f3f7", fg=self.NAVY, font=("Microsoft YaHei UI", 11, "bold")).grid(row=0, column=0, rowspan=2, sticky="nw", padx=18, pady=16)
+        tk.Label(takeaway, textvariable=self._takeaway_heading, bg="#e8f3f7", fg=self.TEXT, font=("Microsoft YaHei UI", 16, "bold"), anchor="w").grid(row=0, column=1, sticky="ew", padx=(0, 18), pady=(13, 2))
+        tk.Label(takeaway, textvariable=self._takeaway_plain, bg="#e8f3f7", fg=self.TEXT, font=("Microsoft YaHei UI", 11), anchor="w", justify="left", wraplength=900).grid(row=1, column=1, sticky="ew", padx=(0, 18), pady=(0, 13))
+        tk.Label(takeaway, textvariable=self._takeaway_technical, bg="#e8f3f7", fg=self.MUTED, font=("Consolas", 9), anchor="e", justify="right", wraplength=380).grid(row=0, column=2, rowspan=2, sticky="e", padx=(0, 18), pady=12)
 
-        workspace = ttk.Frame(outer)
+        workspace = tk.Frame(outer, bg=self.BG)
         workspace.grid(row=2, column=0, sticky="nsew")
         workspace.columnconfigure(0, weight=0, minsize=290)
-        workspace.columnconfigure(1, weight=1, minsize=500)
+        workspace.columnconfigure(1, weight=1, minsize=650)
+        workspace.columnconfigure(2, weight=0, minsize=350)
         workspace.rowconfigure(0, weight=1)
         self._build_controls(workspace)
-        self._build_stream(workspace)
+        self._build_communication(workspace)
+        self._build_coordinates(workspace)
 
-        footer = tk.Label(outer, textvariable=self._state, bg=self.BG, fg=self.MUTED, anchor="w", font=("Microsoft YaHei UI", 9))
-        footer.grid(row=3, column=0, sticky="ew", pady=(12, 0))
-        self._draw_chain()
+        tk.Label(outer, textvariable=self._state, bg=self.BG, fg=self.MUTED, anchor="w", font=("Microsoft YaHei UI", 9)).grid(row=3, column=0, sticky="ew", pady=(12, 0))
 
-    def _metric(self, parent: tk.Widget, title: str, value: tk.Variable | str, column: int) -> None:
+    def _metric(self, parent: tk.Widget, title: str, value: tk.Variable | str, column: int, color: str) -> None:
         block = tk.Frame(parent, bg=self.BG)
-        block.grid(row=0, column=column, padx=(18 if column else 0, 0), sticky="e")
-        tk.Label(block, text=title, bg=self.BG, fg=self.MUTED, font=("Consolas", 8, "bold")).pack(anchor="e")
-        if isinstance(value, tk.Variable):
-            tk.Label(block, textvariable=value, bg=self.BG, fg=self.TEXT, font=("Consolas", 10, "bold")).pack(anchor="e")
-        else:
-            tk.Label(block, text=value, bg=self.BG, fg=self.TEXT, font=("Consolas", 10, "bold")).pack(anchor="e")
+        block.grid(row=0, column=column, padx=(24 if column else 0, 0), sticky="e")
+        tk.Label(block, text=title.upper(), bg=self.BG, fg=self.MUTED, font=("Consolas", 8, "bold")).pack(anchor="e")
+        kwargs = {"textvariable": value} if isinstance(value, tk.Variable) else {"text": value}
+        tk.Label(block, bg=self.BG, fg=color, font=("Consolas", 11, "bold"), **kwargs).pack(anchor="e")
 
-    def _build_controls(self, parent: ttk.Frame) -> None:
-        controls = tk.Frame(parent, bg=self.SURFACE, highlightbackground=self.BORDER, highlightthickness=1)
-        controls.grid(row=0, column=0, sticky="nsew", padx=(0, 14))
+    def _build_controls(self, parent: tk.Frame) -> None:
+        controls = self._panel(parent, 0, 0, padx=(0, 14))
         controls.columnconfigure(0, weight=1)
-        tk.Label(controls, text="02 / 真实动作", bg=self.SURFACE, fg=self.MUTED, font=("Consolas", 9, "bold")).grid(row=0, column=0, sticky="w", padx=16, pady=(14, 2))
-        tk.Label(controls, text="先连接，再读取状态", bg=self.SURFACE, fg=self.TEXT, font=("Microsoft YaHei UI", 12, "bold")).grid(row=1, column=0, sticky="w", padx=16, pady=(0, 10))
-        self._connect_button = ttk.Button(controls, text=f"连接并读取状态 · {self._port}", style="Accent.TButton", command=self._connect)
-        self._connect_button.grid(row=2, column=0, sticky="ew", padx=14, pady=(0, 7))
-        self._status_button = ttk.Button(controls, text="读取状态 ?（不移动）", style="Motion.TButton", command=self._status, state="disabled")
-        self._status_button.grid(row=3, column=0, sticky="ew", padx=14, pady=(0, 14))
-        tk.Label(controls, text="XY · P0 安全范围", bg=self.SURFACE, fg=self.MUTED, font=("Microsoft YaHei UI", 9, "bold")).grid(row=4, column=0, sticky="w", padx=16, pady=(0, 5))
-        for index, (label, action) in enumerate(BUTTON_ACTIONS.items()):
-            button = ttk.Button(controls, text=label, style="Motion.TButton", command=lambda move=action: self._jog(*move), state="disabled")
-            button.grid(row=5 + index, column=0, sticky="ew", padx=14, pady=3)
+        self._label(controls, "01  操作台", size=10, color=self.TEAL, bold=True).grid(row=0, column=0, sticky="w", padx=16, pady=(16, 1))
+        self._label(controls, "真实按钮，不是动画", size=14, bold=True).grid(row=1, column=0, sticky="w", padx=16, pady=(0, 5))
+        self._label(controls, "连接后先读取状态；每次微动受 5 mm 限制。", size=9, color=self.MUTED, justify="left", wraplength=250).grid(row=2, column=0, sticky="w", padx=16, pady=(0, 13))
+        self._connect_button = ttk.Button(controls, text=f"连接并读取状态 · {self._port}", style="Action.TButton", command=self._connect)
+        self._connect_button.grid(row=3, column=0, sticky="ew", padx=14, pady=(0, 7))
+        self._status_button = ttk.Button(controls, text="只读查询 ?（不移动）", style="Move.TButton", command=self._status, state="disabled")
+        self._status_button.grid(row=4, column=0, sticky="ew", padx=14, pady=(0, 16))
+        self._axis_group(controls, 5, "X 轴 · 左右", ("X 向左 −5 mm", "X 向右 +5 mm"), (BUTTON_ACTIONS["X 向左 -5 mm"], BUTTON_ACTIONS["X 向右 +5 mm"]))
+        self._axis_group(controls, 7, "Y 轴 · 前后", ("Y 向后 −5 mm", "Y 向前 +5 mm"), (BUTTON_ACTIONS["Y 向后 -5 mm"], BUTTON_ACTIONS["Y 向前 +5 mm"]))
+        self._axis_group(controls, 9, "Z 轴 · 上下", ("Z 向上 −1 mm", "Z 向下 +1 mm"), (BUTTON_ACTIONS["Z 向上 -1 mm"], BUTTON_ACTIONS["Z 向下 +1 mm"]))
+        self._label(controls, "连接参数", size=9, color=self.NAVY, bold=True).grid(row=11, column=0, sticky="w", padx=16, pady=(16, 3))
+        self._label(controls, "115200 baud · 8-N-1 · 无流控\nP0 是手动参考点，不是编码器原点。", size=9, color=self.MUTED, justify="left").grid(row=12, column=0, sticky="w", padx=16, pady=(0, 15))
+
+    def _axis_group(self, parent: tk.Frame, row: int, title: str, labels: tuple[str, str], actions: tuple[tuple[str, float, float], tuple[str, float, float]]) -> None:
+        tk.Label(parent, text=title, bg=self.SURFACE, fg=self.MUTED, font=("Microsoft YaHei UI", 9, "bold")).grid(row=row, column=0, sticky="w", padx=16, pady=(4, 4))
+        holder = tk.Frame(parent, bg=self.SURFACE)
+        holder.grid(row=row + 1, column=0, sticky="ew", padx=14)
+        holder.columnconfigure(0, weight=1)
+        holder.columnconfigure(1, weight=1)
+        for column, (label, action) in enumerate(zip(labels, actions)):
+            button = ttk.Button(holder, text=label, style="Move.TButton", command=lambda move=action: self._jog(*move), state="disabled")
+            button.grid(row=0, column=column, sticky="ew", padx=(0, 4) if column == 0 else (4, 0))
             self._motion_buttons.append(button)
-        tk.Label(controls, text="串口：115200 · 8-N-1 · 无流控\n动作：相对 jog · 每次 ≤ 5 mm\n坐标：P0 手动参考，不是编码器反馈", bg=self.SURFACE, fg=self.MUTED, justify="left", anchor="w", font=("Consolas", 8)).grid(row=12, column=0, sticky="w", padx=16, pady=(17, 14))
 
-    def _build_stream(self, parent: ttk.Frame) -> None:
-        stream = tk.Frame(parent, bg=self.SURFACE, highlightbackground=self.BORDER, highlightthickness=1)
-        stream.grid(row=0, column=1, sticky="nsew")
-        stream.columnconfigure(0, weight=1)
-        stream.rowconfigure(2, weight=1)
-        tk.Label(stream, text="03 / 原始协议流", bg=self.SURFACE, fg=self.MUTED, font=("Consolas", 9, "bold")).grid(row=0, column=0, sticky="w", padx=16, pady=(14, 2))
-        tk.Label(stream, text="真实字节的可读转写", bg=self.SURFACE, fg=self.TEXT, font=("Microsoft YaHei UI", 12, "bold")).grid(row=1, column=0, sticky="w", padx=16, pady=(0, 9))
-        log_frame = tk.Frame(stream, bg="#07131f")
-        log_frame.grid(row=2, column=0, sticky="nsew", padx=14, pady=(0, 8))
-        log_frame.columnconfigure(0, weight=1)
-        log_frame.rowconfigure(0, weight=1)
-        self._log = scrolledtext.ScrolledText(log_frame, height=20, wrap="none", state="disabled", bg="#07131f", fg=self.TEXT, insertbackground=self.TEXT, relief="flat", bd=0, padx=12, pady=10, font=("Consolas", 10))
-        self._log.grid(row=0, column=0, sticky="nsew")
-        self._log.tag_configure("CALL", foreground=self.BLUE)
-        self._log.tag_configure("TX", foreground=self.AMBER)
-        self._log.tag_configure("RX", foreground=self.GREEN)
-        self._log.tag_configure("ERROR", foreground=self.RED)
-        self._log.tag_configure("NOTE", foreground=self.MUTED)
-        tk.Label(stream, textvariable=self._last_event, bg=self.SURFACE, fg=self.MUTED, anchor="w", font=("Consolas", 8)).grid(row=3, column=0, sticky="ew", padx=16, pady=(0, 12))
+    def _build_communication(self, parent: tk.Frame) -> None:
+        panel = self._panel(parent, 0, 1, padx=(0, 14))
+        panel.columnconfigure(0, weight=1)
+        panel.rowconfigure(2, weight=1)
+        self._label(panel, "02  通信过程", size=10, color=self.BLUE, bold=True).grid(row=0, column=0, sticky="w", padx=16, pady=(16, 1))
+        self._label(panel, "每一行都来自真实串口", size=14, bold=True).grid(row=1, column=0, sticky="w", padx=16, pady=(0, 9))
+        self._flow = scrolledtext.ScrolledText(panel, height=18, wrap="word", state="disabled", bg="#f8fbfd", fg=self.TEXT, relief="flat", bd=0, padx=14, pady=12, font=("Microsoft YaHei UI", 10))
+        self._flow.grid(row=2, column=0, sticky="nsew", padx=14, pady=(0, 10))
+        self._flow.tag_configure("number", foreground=self.MUTED, font=("Consolas", 9, "bold"))
+        self._flow.tag_configure("call", foreground=self.BLUE, font=("Consolas", 9, "bold"))
+        self._flow.tag_configure("tx", foreground=self.AMBER, font=("Consolas", 9, "bold"))
+        self._flow.tag_configure("rx", foreground=self.GREEN, font=("Consolas", 9, "bold"))
+        self._flow.tag_configure("explain", foreground=self.TEXT)
+        self._flow.tag_configure("technical", foreground=self.MUTED, font=("Consolas", 9))
+        detail = tk.Frame(panel, bg="#f0f6fa", highlightbackground=self.BORDER, highlightthickness=1)
+        detail.grid(row=3, column=0, sticky="ew", padx=14, pady=(0, 10))
+        detail.columnconfigure(0, weight=1)
+        tk.Label(detail, text="对应 Python / 协议写法", bg="#f0f6fa", fg=self.NAVY, font=("Microsoft YaHei UI", 9, "bold")).grid(row=0, column=0, sticky="w", padx=12, pady=(9, 2))
+        tk.Label(detail, textvariable=self._code, bg="#f0f6fa", fg=self.TEXT, font=("Consolas", 10), anchor="w", justify="left", wraplength=670).grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 9))
+        raw = tk.Frame(panel, bg="#fffaf0", highlightbackground="#ecd7ac", highlightthickness=1)
+        raw.grid(row=4, column=0, sticky="ew", padx=14, pady=(0, 14))
+        tk.Label(raw, text="原始帧（可复制给老师核对）", bg="#fffaf0", fg=self.AMBER, font=("Microsoft YaHei UI", 9, "bold")).pack(anchor="w", padx=12, pady=(8, 2))
+        tk.Label(raw, textvariable=self._raw_frame, bg="#fffaf0", fg=self.TEXT, font=("Consolas", 9), anchor="w", justify="left", wraplength=670).pack(anchor="w", padx=12, pady=(0, 9))
 
-    def _draw_chain(self, active: str | None = None) -> None:
-        if not hasattr(self, "_chain"):
+    def _build_coordinates(self, parent: tk.Frame) -> None:
+        panel = self._panel(parent, 0, 2)
+        panel.columnconfigure(0, weight=1)
+        self._label(panel, "03  坐标仪表", size=10, color=self.PURPLE, bold=True).grid(row=0, column=0, sticky="w", padx=16, pady=(16, 1))
+        self._label(panel, "GRBL 当前报告的位置", size=14, bold=True).grid(row=1, column=0, sticky="w", padx=16, pady=(0, 9))
+        self._plane = tk.Canvas(panel, width=320, height=270, bg="#f7fbfd", bd=0, highlightbackground=self.BORDER, highlightthickness=1)
+        self._plane.grid(row=2, column=0, sticky="ew", padx=14, pady=(0, 12))
+        self._plane.bind("<Configure>", lambda _event: self._draw_coordinates())
+        coord_box = tk.Frame(panel, bg="#f4f1fb", highlightbackground="#d8ccef", highlightthickness=1)
+        coord_box.grid(row=3, column=0, sticky="ew", padx=14, pady=(0, 10))
+        coord_box.columnconfigure(0, weight=1)
+        tk.Label(coord_box, textvariable=self._position, bg="#f4f1fb", fg=self.PURPLE, font=("Consolas", 15, "bold"), anchor="w").grid(row=0, column=0, sticky="ew", padx=12, pady=(10, 2))
+        tk.Label(coord_box, textvariable=self._coord_plain, bg="#f4f1fb", fg=self.TEXT, font=("Microsoft YaHei UI", 9), anchor="w", justify="left", wraplength=300).grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 7))
+        tk.Label(coord_box, textvariable=self._coord_technical, bg="#f4f1fb", fg=self.MUTED, font=("Consolas", 8), anchor="w", justify="left", wraplength=300).grid(row=2, column=0, sticky="ew", padx=12, pady=(0, 10))
+        self._label(panel, "怎么读这张图", size=9, color=self.NAVY, bold=True).grid(row=4, column=0, sticky="w", padx=16, pady=(6, 3))
+        self._label(panel, "横轴 X：右为正\n纵轴 Y：前为正\nZ：正方向向下（本机已验证）\n图上的点 = GRBL 返回的 MPos，不是相机坐标。", size=9, color=self.MUTED, justify="left", anchor="w").grid(row=5, column=0, sticky="w", padx=16, pady=(0, 14))
+
+    def _draw_coordinates(self) -> None:
+        if not hasattr(self, "_plane"):
             return
-        canvas = self._chain
+        canvas = self._plane
         canvas.delete("all")
-        width = max(canvas.winfo_width(), 700)
-        gap = width / len(CHAIN_STAGES)
-        for index, stage in enumerate(CHAIN_STAGES):
-            x = gap * index + gap / 2
-            if index < len(CHAIN_STAGES) - 1:
-                canvas.create_line(x + 72, 62, x + gap - 72, 62, fill=self.BORDER, width=2)
-            is_active = stage.key == active
-            fill = "#155640" if is_active else self.SURFACE_2
-            outline = self.GREEN if is_active else self.BORDER
-            canvas.create_oval(x - 31, 31, x + 31, 93, fill=fill, outline=outline, width=2)
-            canvas.create_text(x, 62, text=str(index + 1).zfill(2), fill=self.TEXT if is_active else self.MUTED, font=("Consolas", 13, "bold"))
-            canvas.create_text(x, 108, text=stage.title, fill=self.TEXT if is_active else self.MUTED, font=("Microsoft YaHei UI", 9, "bold"))
-            canvas.create_text(x, 126, text=stage.detail, fill=self.MUTED, font=("Microsoft YaHei UI", 8))
+        width = max(canvas.winfo_width(), 300)
+        height = max(canvas.winfo_height(), 250)
+        left, top, right, bottom = 35, 20, width - 22, height - 28
+        canvas.create_rectangle(left, top, right, bottom, outline=self.BORDER, fill="#ffffff")
+        for fraction in (0.25, 0.5, 0.75):
+            x = left + (right - left) * fraction
+            y = top + (bottom - top) * fraction
+            canvas.create_line(x, top, x, bottom, fill="#e5edf2")
+            canvas.create_line(left, y, right, y, fill="#e5edf2")
+        canvas.create_line(left, bottom, right, bottom, fill=self.NAVY, width=2, arrow="last")
+        canvas.create_line(left, bottom, left, top, fill=self.NAVY, width=2, arrow="last")
+        canvas.create_text(right - 4, bottom + 15, text="X+ 右", fill=self.NAVY, anchor="e", font=("Consolas", 8, "bold"))
+        canvas.create_text(left - 4, top - 5, text="Y+ 前", fill=self.NAVY, anchor="e", font=("Consolas", 8, "bold"))
+        x_min, x_max, y_min, y_max = -190.0, 190.0, -90.0, 140.0
+        px = left + (self._current_position.x - x_min) / (x_max - x_min) * (right - left)
+        py = bottom - (self._current_position.y - y_min) / (y_max - y_min) * (bottom - top)
+        px = min(max(px, left), right)
+        py = min(max(py, top), bottom)
+        canvas.create_line(px - 10, py, px + 10, py, fill=self.TEAL, width=2)
+        canvas.create_line(px, py - 10, px, py + 10, fill=self.TEAL, width=2)
+        canvas.create_oval(px - 5, py - 5, px + 5, py + 5, fill=self.TEAL, outline="#ffffff", width=2)
+        canvas.create_text(px + 9, py - 9, text="当前 MPos", fill=self.TEAL, anchor="w", font=("Microsoft YaHei UI", 8, "bold"))
 
     def _connect(self) -> None:
         if self._worker is not None and self._worker.is_running:
@@ -341,7 +499,7 @@ class ProtocolMonitorApp:
 
     def _jog(self, axis: str, distance_mm: float, feed_mm_min: float) -> None:
         if self._worker is not None:
-            self._state.set(f"请求真实运动 · {axis}{distance_mm:g} mm · F{feed_mm_min:g}")
+            self._state.set(f"已提交真实动作 · {axis}{distance_mm:g} mm · 等待真实 CALL/TX/RX")
             self._worker.request_jog(axis, distance_mm, feed_mm_min)
 
     def _drain_events(self) -> None:
@@ -352,49 +510,71 @@ class ProtocolMonitorApp:
                 break
             if kind == "trace":
                 event = payload
-                label, text = format_trace_event(event)
-                tag = {"PYTHON": "CALL", "TX → GRBL": "TX", "GRBL → RX": "RX"}.get(label, "CALL")
-                self._append_log(f"[{label:<10}] {text}", tag)
-                self._draw_chain(event_stage(event))
-                self._explanation.set(describe_trace_event(event))
-                self._last_event.set(f"最新事件 · {label} · {text}")
+                self._sequence += 1
+                explanation = explain_trace_event(event)
+                self._history.append((self._sequence, event, explanation))
+                self._history = self._history[-24:]
+                self._render_teaching(explanation, event)
+                self._render_flow()
             elif kind == "connected":
-                self._connection.set("ONLINE")
-                self._state.set(f"已连接 {payload} · 首次状态查询已执行 · 等待真实动作")
+                self._connection.set("已连接")
+                self._state.set(f"已连接 {payload} · 已执行首次只读状态查询")
                 self._status_button.configure(state="normal")
                 for button in self._motion_buttons:
                     button.configure(state="normal")
             elif kind == "status":
-                status = payload
-                self._grbl_state.set(status.strip("<>").split("|", 1)[0])
-                try:
-                    position = parse_mpos(status)
-                    self._position.set(f"MPos {position.x:.1f}, {position.y:.1f}, {position.z:.1f}")
-                except ValueError:
-                    self._position.set("MPos  —")
-                self._state.set(f"GRBL 状态 · {status}")
+                self._update_status(payload)
             elif kind == "motion_done":
                 command = payload
-                self._state.set(f"真实运动完成 · {command.axis}{command.distance_mm:g} mm · 请同时观察机械运动")
+                self._state.set(f"动作已完成 · {command.axis}{command.distance_mm:g} mm · 请同时观察机器实际运动")
             elif kind == "error":
-                self._connection.set("ERROR")
+                self._connection.set("错误")
                 self._state.set(f"错误 · {payload}")
-                self._append_log(f"[ERROR     ] {payload}", "ERROR")
-                self._explanation.set("控制器拒绝或未完成本次动作；请先检查电源、端口和机械余量。")
+                self._takeaway_heading.set("控制器暂停了本次动作")
+                self._takeaway_plain.set("请先看通信流水中的最后一条错误，再检查电源、端口和机械余量。")
+                self._takeaway_technical.set(str(payload))
             elif kind == "disconnected":
-                self._connection.set("OFFLINE")
+                self._connection.set("未连接")
                 self._status_button.configure(state="disabled")
                 for button in self._motion_buttons:
                     button.configure(state="disabled")
                 if self._worker is not None and not self._worker.is_running:
                     self._connect_button.configure(state="normal")
+        self._event_counter.set(f"{self._sequence} 条真实事件")
         self._root.after(100, self._drain_events)
 
-    def _append_log(self, text: str, tag: str) -> None:
-        self._log.configure(state="normal")
-        self._log.insert("end", text + "\n", tag)
-        self._log.see("end")
-        self._log.configure(state="disabled")
+    def _update_status(self, status: str) -> None:
+        try:
+            explanation = explain_status(status)
+        except ValueError:
+            self._grbl_state.set("未知")
+            return
+        self._grbl_state.set(explanation.state)
+        self._current_position = explanation.position
+        self._position.set(f"X {explanation.position.x:.1f}   Y {explanation.position.y:.1f}   Z {explanation.position.z:.1f} mm")
+        self._coord_plain.set(explanation.plain)
+        self._coord_technical.set(explanation.technical)
+        self._draw_coordinates()
+
+    def _render_teaching(self, explanation: TeachingExplanation, event: TraceEvent) -> None:
+        self._takeaway_heading.set(explanation.heading)
+        self._takeaway_plain.set(explanation.plain)
+        self._takeaway_technical.set(explanation.technical)
+        self._code.set(explanation.code)
+        self._raw_frame.set(f"{event.kind}  |  {event.text!r}")
+
+    def _render_flow(self) -> None:
+        self._flow.configure(state="normal")
+        self._flow.delete("1.0", "end")
+        for sequence, event, explanation in self._history:
+            label, text = format_trace_event(event)
+            tag = "call" if event.kind == "CALL" else "tx" if event.kind == "TX" else "rx"
+            self._flow.insert("end", f"#{sequence:02d}  {label}\n", ("number", tag))
+            self._flow.insert("end", f"     {text}\n", "technical")
+            self._flow.insert("end", f"     老师先看：{explanation.plain}\n", "explain")
+            self._flow.insert("end", f"     技术含义：{explanation.technical}\n\n", "technical")
+        self._flow.see("end")
+        self._flow.configure(state="disabled")
 
     def _on_close(self) -> None:
         if self._worker is not None and self._worker.is_running:

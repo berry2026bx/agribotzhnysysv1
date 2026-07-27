@@ -4,6 +4,8 @@ import pytest
 from communication.dayuwriter.grbl_monitor import (
     BUTTON_ACTIONS,
     describe_trace_event,
+    explain_status,
+    explain_trace_event,
     event_stage,
     format_trace_event,
     validate_monitor_motion,
@@ -50,3 +52,20 @@ def test_trace_events_map_to_teacher_facing_causal_stages(
 ) -> None:
     assert event_stage(event) == stage
     assert describe_trace_event(event) == explanation
+
+
+def test_command_explanation_teaches_relative_jog_tokens() -> None:
+    explanation = explain_trace_event(TraceEvent("TX", "$J=G91 G21 X5 F100"))
+    assert explanation.stage == "command"
+    assert explanation.heading == "Python 发出运动指令"
+    assert "相对" in explanation.plain
+    assert "G91" in explanation.technical
+    assert explanation.code == 'serial.write(b"$J=G91 G21 X5 F100\\n")'
+
+
+def test_status_explanation_exposes_real_coordinate_and_state() -> None:
+    explanation = explain_status("<Idle|MPos:12.500,-3.000,4.000|FS:0,0>")
+    assert explanation.state == "Idle"
+    assert explanation.position.x == 12.5
+    assert "X=12.5" in explanation.plain
+    assert "MPos" in explanation.technical
