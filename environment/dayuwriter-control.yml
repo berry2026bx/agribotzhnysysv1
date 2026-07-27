@@ -6,4 +6,6 @@ dependencies:
   - pip
   - pyserial>=3.5
   - pytest>=8
-
+  - pip:
+      - numpy>=2.0
+      - pyrealsense2>=2.58
