@@ -3,6 +3,7 @@ import pytest
 
 from communication.dayuwriter.grbl_monitor import (
     BUTTON_ACTIONS,
+    record_coordinate_status,
     describe_trace_event,
     explain_status,
     explain_trace_event,
@@ -73,6 +74,18 @@ def test_status_explanation_exposes_real_coordinate_and_state() -> None:
     assert explanation.position.x == 12.5
     assert "X=12.5" in explanation.plain
     assert "MPos" in explanation.technical
+
+
+def test_coordinate_history_uses_real_mpos_frames_and_reports_delta() -> None:
+    first = record_coordinate_status("<Idle|MPos:0.000,0.000,0.000|FS:0,0>", None)
+    assert first.state == "Idle"
+    assert first.position.x == 0.0
+    assert first.change == "首次状态帧：建立 GRBL 当前 MPos 记录。"
+
+    moved = record_coordinate_status("<Jog|MPos:5.000,-2.500,1.000|FS:100,0>", first.position)
+    assert moved.state == "Jog"
+    assert moved.position.y == -2.5
+    assert moved.change == "相对上一帧：X +5.000 mm；Y -2.500 mm；Z +1.000 mm。"
 
 
 def test_protocol_guide_covers_serial_grbl_and_status_line_basics() -> None:

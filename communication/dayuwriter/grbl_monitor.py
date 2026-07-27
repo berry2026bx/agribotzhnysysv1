@@ -85,9 +85,18 @@ class TeachingExplanation:
 @dataclass(frozen=True)
 class StatusExplanation:
     state: str
-    position: object
+    position: Position
     plain: str
     technical: str
+
+
+@dataclass(frozen=True)
+class CoordinateStatus:
+    """One coordinate record derived from an observed GRBL status frame."""
+
+    state: str
+    position: Position
+    change: str
 
 
 @dataclass(frozen=True)
@@ -279,6 +288,23 @@ def explain_status(status_raw: str) -> StatusExplanation:
     plain = f"GRBL 当前是 {state}。它报告 X={position.x:g} mm、Y={position.y:g} mm、Z={position.z:g} mm。"
     technical = "MPos 是 GRBL 固件内部的位置记录；它不是编码器测量值，也不会替代重新对齐 P0。"
     return StatusExplanation(state, position, plain, technical)
+
+
+def record_coordinate_status(status_raw: str, previous: Position | None) -> CoordinateStatus:
+    """Create a display record from a real MPos frame, never from a button intent."""
+
+    explanation = explain_status(status_raw)
+    position = explanation.position
+    if previous is None:
+        change = "首次状态帧：建立 GRBL 当前 MPos 记录。"
+    else:
+        change = (
+            "相对上一帧："
+            f"X {position.x - previous.x:+.3f} mm；"
+            f"Y {position.y - previous.y:+.3f} mm；"
+            f"Z {position.z - previous.z:+.3f} mm。"
+        )
+    return CoordinateStatus(explanation.state, position, change)
 
 
 def parse_status_fields(status_raw: str) -> tuple[StatusField, ...]:
@@ -498,11 +524,13 @@ class ProtocolMonitorApp:
         self._worker: GrblWorker | None = None
         self._motion_buttons: list[ttk.Button] = []
         self._history: list[tuple[int, TraceEvent, TeachingExplanation]] = []
+        self._position_history: list[CoordinateStatus] = []
         self._sequence = 0
         self._current_position = Position(0.0, 0.0, 0.0)
+        self._active_chain_stage: str | None = None
         self._root.title("DayuWriter · 现场控制与通信说明")
-        self._root.geometry("1500x960")
-        self._root.minsize(1280, 820)
+        self._root.geometry("1560x1040")
+        self._root.minsize(1280, 900)
         self._root.configure(bg=self.BG)
         self._root.protocol("WM_DELETE_WINDOW", self._on_close)
         self._configure_style()
@@ -511,6 +539,7 @@ class ProtocolMonitorApp:
         self._grbl_state = tk.StringVar(value="—")
         self._position = tk.StringVar(value="X —   Y —   Z — mm")
         self._event_counter = tk.StringVar(value="0 条真实事件")
+        self._chain_summary = tk.StringVar(value="尚未连接。点击连接后，阶段条只会高亮实际发生的 CALL、TX 或 RX 事件。")
         self._detail_stage = tk.StringVar(value="等待事件")
         self._detail_heading = tk.StringVar(value="等待第一条真实通信")
         self._detail_plain = tk.StringVar(value="连接后，动作按钮会产生真实 CALL、TX、RX 事件；详细解释只显示最新一条，避免重复占满页面。")
@@ -590,13 +619,27 @@ class ProtocolMonitorApp:
         parent.columnconfigure(0, weight=0, minsize=285)
         parent.columnconfigure(1, weight=1, minsize=640)
         parent.columnconfigure(2, weight=0, minsize=410)
-        parent.rowconfigure(0, weight=1)
-        self._build_controls(parent)
-        self._build_stream(parent)
-        self._build_current_detail(parent)
+        parent.rowconfigure(0, weight=0)
+        parent.rowconfigure(1, weight=1)
+        self._build_causal_chain(parent)
+        self._build_controls(parent, 1)
+        self._build_stream(parent, 1)
+        self._build_current_detail(parent, 1)
 
-    def _build_controls(self, parent: tk.Frame) -> None:
-        controls = self._panel(parent, 0, 0, padx=(0, 14))
+    def _build_causal_chain(self, parent: tk.Frame) -> None:
+        band = tk.Frame(parent, bg="#e8f2f8", highlightbackground=self.BORDER, highlightthickness=1)
+        band.grid(row=0, column=0, columnspan=3, sticky="ew", pady=(0, 14))
+        band.columnconfigure(0, weight=1)
+        tk.Label(band, text="通信阶段：查询与移动的因果链", bg="#e8f2f8", fg=self.NAVY, font=("Microsoft YaHei UI", 11, "bold"), anchor="w").grid(row=0, column=0, sticky="w", padx=18, pady=(12, 0))
+        tk.Label(band, text="只读查询走 CALL → TX ? → RX Idle；一次移动才会依次经过完整六步。高亮只代表当前真实事件。", bg="#e8f2f8", fg=self.MUTED, font=("Microsoft YaHei UI", 9), anchor="w").grid(row=1, column=0, sticky="w", padx=18, pady=(0, 5))
+        self._chain_canvas = tk.Canvas(band, height=84, bg="#e8f2f8", bd=0, highlightthickness=0)
+        self._chain_canvas.grid(row=2, column=0, sticky="ew", padx=12)
+        self._chain_canvas.bind("<Configure>", lambda _event: self._draw_causal_chain())
+        tk.Label(band, textvariable=self._chain_summary, bg="#e8f2f8", fg=self.TEXT, font=("Microsoft YaHei UI", 10), anchor="w", justify="left", wraplength=1400).grid(row=3, column=0, sticky="ew", padx=18, pady=(4, 12))
+        self._draw_causal_chain()
+
+    def _build_controls(self, parent: tk.Frame, row: int) -> None:
+        controls = self._panel(parent, row, 0, padx=(0, 14))
         controls.columnconfigure(0, weight=1)
         self._label(controls, "动作控制", size=10, color=self.TEAL, bold=True).grid(row=0, column=0, sticky="w", padx=16, pady=(18, 2))
         self._label(controls, "先查状态，再移动", size=15, bold=True).grid(row=1, column=0, sticky="w", padx=16, pady=(0, 5))
@@ -622,22 +665,38 @@ class ProtocolMonitorApp:
             button.grid(row=0, column=column, sticky="ew", padx=(0, 4) if column == 0 else (4, 0))
             self._motion_buttons.append(button)
 
-    def _build_stream(self, parent: tk.Frame) -> None:
-        panel = self._panel(parent, 0, 1, padx=(0, 14))
+    def _build_stream(self, parent: tk.Frame, row: int) -> None:
+        panel = self._panel(parent, row, 1, padx=(0, 14))
         panel.columnconfigure(0, weight=1)
-        panel.rowconfigure(2, weight=1)
+        panel.rowconfigure(2, weight=3)
+        panel.rowconfigure(4, weight=2)
         self._label(panel, "实时流水", size=10, color=self.BLUE, bold=True).grid(row=0, column=0, sticky="w", padx=16, pady=(18, 2))
         self._label(panel, "只显示事实，不重复长篇说明", size=15, bold=True).grid(row=1, column=0, sticky="w", padx=16, pady=(0, 10))
-        self._flow = scrolledtext.ScrolledText(panel, height=26, wrap="word", state="disabled", bg="#f8fbfd", fg=self.TEXT, relief="flat", bd=0, padx=14, pady=14, font=("Consolas", 10), spacing1=2, spacing3=5)
+        self._flow = scrolledtext.ScrolledText(panel, height=14, wrap="word", state="disabled", bg="#f8fbfd", fg=self.TEXT, relief="flat", bd=0, padx=14, pady=14, font=("Consolas", 10), spacing1=2, spacing3=5)
         self._flow.grid(row=2, column=0, sticky="nsew", padx=14, pady=(0, 14))
         self._flow.tag_configure("call", foreground=self.BLUE, font=("Consolas", 10, "bold"))
         self._flow.tag_configure("tx", foreground=self.AMBER, font=("Consolas", 10, "bold"))
         self._flow.tag_configure("rx", foreground=self.GREEN, font=("Consolas", 10, "bold"))
         self._flow.tag_configure("payload", foreground=self.TEXT)
         self._flow.tag_configure("summary", foreground=self.MUTED, font=("Microsoft YaHei UI", 9))
+        self._label(panel, "坐标移动历程", size=10, color=self.TEAL, bold=True).grid(row=3, column=0, sticky="w", padx=16, pady=(2, 4))
+        history = tk.Frame(panel, bg=self.SURFACE)
+        history.grid(row=4, column=0, sticky="nsew", padx=14, pady=(0, 14))
+        history.columnconfigure(0, weight=3)
+        history.columnconfigure(1, weight=2)
+        history.rowconfigure(0, weight=1)
+        self._trajectory_canvas = tk.Canvas(history, height=168, bg="#ffffff", bd=0, highlightbackground=self.BORDER, highlightthickness=1)
+        self._trajectory_canvas.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
+        self._trajectory_canvas.bind("<Configure>", lambda _event: self._draw_coordinate_history())
+        self._position_history_text = scrolledtext.ScrolledText(history, height=9, wrap="word", state="disabled", bg="#f8fbfd", fg=self.TEXT, relief="flat", bd=0, padx=12, pady=10, font=("Consolas", 9), spacing1=2, spacing3=3)
+        self._position_history_text.grid(row=0, column=1, sticky="nsew")
+        self._position_history_text.tag_configure("sample", foreground=self.TEAL, font=("Consolas", 9, "bold"))
+        self._position_history_text.tag_configure("change", foreground=self.TEXT)
+        self._position_history_text.tag_configure("notice", foreground=self.MUTED, font=("Microsoft YaHei UI", 8))
+        self._render_coordinate_history()
 
-    def _build_current_detail(self, parent: tk.Frame) -> None:
-        panel = self._panel(parent, 0, 2)
+    def _build_current_detail(self, parent: tk.Frame, row: int) -> None:
+        panel = self._panel(parent, row, 2)
         panel.columnconfigure(0, weight=1)
         self._label(panel, "当前事件", size=10, color=self.PURPLE, bold=True).grid(row=0, column=0, sticky="w", padx=16, pady=(18, 2))
         tk.Label(panel, textvariable=self._detail_stage, bg=self.SURFACE, fg=self.PURPLE, font=("Consolas", 10, "bold"), anchor="w").grid(row=1, column=0, sticky="ew", padx=16, pady=(0, 5))
@@ -706,6 +765,82 @@ class ProtocolMonitorApp:
         info.grid(row=2, column=1, sticky="nsew", padx=(10, 20), pady=(16, 20))
         self._label(info, "坐标怎样读", size=14, bold=True).pack(anchor="w", padx=20, pady=(20, 12))
         self._label(info, "X 轴：右为正，左为负\nY 轴：前为正，后为负\nZ 轴：本机正方向向下\n\nMPos：GRBL 内部记录的坐标。\nP0：人工标记的物理参考点。\n\nP0 不是硬件回零，也不是编码器原点。重新连接或手工移动后，应先让物理笔架回到 P0，再把坐标解释为实验坐标。\n\n已测量的 XY 安全范围：\nX：−190 到 +190 mm\nY：−90 到 +140 mm\nZ：当前只做相对移动，未建立绝对边界。", size=11, color=self.TEXT, justify="left", anchor="nw", wraplength=440).pack(anchor="nw", padx=20, pady=(0, 20))
+
+    def _draw_causal_chain(self) -> None:
+        canvas = getattr(self, "_chain_canvas", None)
+        if canvas is None:
+            return
+        canvas.delete("all")
+        width = max(canvas.winfo_width(), 1120)
+        stages = CHAIN_STAGES
+        gap = 12
+        margin = 12
+        node_width = (width - margin * 2 - gap * (len(stages) - 1)) / len(stages)
+        top, bottom = 12, 72
+        for index, stage in enumerate(stages):
+            left = margin + index * (node_width + gap)
+            right = left + node_width
+            active = stage.key == self._active_chain_stage
+            fill = self.NAVY if active else "#ffffff"
+            outline = self.NAVY if active else self.BORDER
+            title_color = "#ffffff" if active else self.TEXT
+            detail_color = "#dcecf7" if active else self.MUTED
+            if index:
+                canvas.create_line(left - gap + 2, 42, left - 3, 42, fill=self.TEAL if active else self.BORDER, width=2, arrow="last")
+            canvas.create_rectangle(left, top, right, bottom, fill=fill, outline=outline, width=2 if active else 1)
+            canvas.create_text((left + right) / 2, 30, text=stage.title, fill=title_color, font=("Microsoft YaHei UI", 10, "bold"))
+            canvas.create_text((left + right) / 2, 53, text=stage.detail, fill=detail_color, font=("Microsoft YaHei UI", 8), width=max(node_width - 12, 70))
+
+    def _draw_coordinate_history(self) -> None:
+        canvas = getattr(self, "_trajectory_canvas", None)
+        if canvas is None:
+            return
+        canvas.delete("all")
+        width = max(canvas.winfo_width(), 360)
+        height = max(canvas.winfo_height(), 150)
+        left, top, right, bottom = 42, 22, width - 20, height - 30
+        canvas.create_rectangle(left, top, right, bottom, outline=self.BORDER, fill="#ffffff")
+        canvas.create_line(left, (top + bottom) / 2, right, (top + bottom) / 2, fill="#e5edf2")
+        canvas.create_line((left + right) / 2, top, (left + right) / 2, bottom, fill="#e5edf2")
+        canvas.create_text(left, top - 10, text="Y+ 前", fill=self.TEAL, anchor="w", font=("Consolas", 8, "bold"))
+        canvas.create_text(left - 5, bottom, text="Y− 后", fill=self.MUTED, anchor="e", font=("Consolas", 8))
+        canvas.create_text(right, bottom + 12, text="X+ 右", fill=self.NAVY, anchor="e", font=("Consolas", 8, "bold"))
+        canvas.create_text(left, bottom + 12, text="X− 左", fill=self.MUTED, anchor="w", font=("Consolas", 8))
+        if not self._position_history:
+            canvas.create_text((left + right) / 2, (top + bottom) / 2, text="等待真实 RX 状态帧中的 MPos", fill=self.MUTED, font=("Microsoft YaHei UI", 10))
+            return
+        x_min, x_max, y_min, y_max = -190.0, 190.0, -90.0, 140.0
+
+        def map_point(position: Position) -> tuple[float, float]:
+            x = left + (position.x - x_min) / (x_max - x_min) * (right - left)
+            y = bottom - (position.y - y_min) / (y_max - y_min) * (bottom - top)
+            return min(max(x, left), right), min(max(y, top), bottom)
+
+        points = [map_point(sample.position) for sample in self._position_history]
+        for start, end in zip(points, points[1:]):
+            canvas.create_line(*start, *end, fill=self.BLUE, width=2)
+        start_x, start_y = points[0]
+        end_x, end_y = points[-1]
+        canvas.create_oval(start_x - 4, start_y - 4, start_x + 4, start_y + 4, fill=self.NAVY, outline="#ffffff")
+        canvas.create_text(start_x + 8, start_y - 8, text="起点", fill=self.NAVY, anchor="w", font=("Microsoft YaHei UI", 8, "bold"))
+        canvas.create_oval(end_x - 6, end_y - 6, end_x + 6, end_y + 6, fill=self.TEAL, outline="#ffffff", width=2)
+        canvas.create_text(end_x + 9, end_y + 10, text="当前", fill=self.TEAL, anchor="w", font=("Microsoft YaHei UI", 8, "bold"))
+
+    def _render_coordinate_history(self) -> None:
+        text = getattr(self, "_position_history_text", None)
+        if text is None:
+            return
+        text.configure(state="normal")
+        text.delete("1.0", "end")
+        text.insert("end", "证据范围：仅记录 RX 状态帧中的 MPos；不是编码器实测。\n\n", "notice")
+        if not self._position_history:
+            text.insert("end", "尚无坐标记录。先连接并读取状态。", "notice")
+        for number, sample in enumerate(self._position_history[-8:], start=max(len(self._position_history) - 7, 1)):
+            text.insert("end", f"#{number:02d}  {sample.state}  X {sample.position.x:.3f}  Y {sample.position.y:.3f}  Z {sample.position.z:.3f}\n", "sample")
+            text.insert("end", f"    {sample.change}\n", "change")
+        text.see("end")
+        text.configure(state="disabled")
+        self._draw_coordinate_history()
 
     def _draw_axis_legend(self) -> None:
         canvas = self._mini_axes
@@ -777,6 +912,8 @@ class ProtocolMonitorApp:
                 self._history = (self._history + [(self._sequence, event, explanation)])[-30:]
                 self._render_detail(explanation, event)
                 self._render_flow()
+                if event.kind == "RX" and event.text.strip().startswith("<"):
+                    self._update_status(event.text)
             elif kind == "connected":
                 self._connection.set("已连接")
                 self._state.set(f"已连接 {payload} · 已执行首次只读状态查询")
@@ -807,6 +944,8 @@ class ProtocolMonitorApp:
     def _update_status(self, status: str) -> None:
         try:
             explanation = explain_status(status)
+            previous = self._position_history[-1].position if self._position_history else None
+            sample = record_coordinate_status(status, previous)
         except ValueError:
             self._grbl_state.set("未知")
             return
@@ -816,8 +955,15 @@ class ProtocolMonitorApp:
         self._coord_plain.set(explanation.plain)
         self._coord_technical.set(explanation.technical)
         self._draw_coordinates()
+        if previous is None or sample.position != previous or sample.state != self._position_history[-1].state:
+            self._position_history = (self._position_history + [sample])[-24:]
+            self._render_coordinate_history()
 
     def _render_detail(self, explanation: TeachingExplanation, event: TraceEvent) -> None:
+        self._active_chain_stage = explanation.stage if explanation.stage in {stage.key for stage in CHAIN_STAGES} else None
+        title = next((stage.title for stage in CHAIN_STAGES if stage.key == self._active_chain_stage), "串口事件")
+        self._chain_summary.set(f"当前真实阶段：{title}。{explanation.plain}")
+        self._draw_causal_chain()
         self._detail_stage.set(f"阶段：{explanation.stage} · {event.kind}")
         self._detail_heading.set(explanation.heading)
         self._detail_plain.set(explanation.plain)
