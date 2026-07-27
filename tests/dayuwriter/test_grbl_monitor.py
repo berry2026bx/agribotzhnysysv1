@@ -116,7 +116,18 @@ def test_status_frame_is_split_into_named_fields_with_verified_meanings() -> Non
 
 def test_frame_detail_explains_direction_and_each_status_token() -> None:
     detail = format_frame_fields(TraceEvent("RX", "<Jog|MPos:0.225,0.000,0.000|FS:100,0|Pn:P>"))
-    assert "RX：电脑从 GRBL 收到" in detail
-    assert "状态 = Jog" in detail
-    assert "FS = 进给 100 mm/min；主轴 0 RPM" in detail
-    assert "Pn = P" in detail
+    assert "RX / Receive" in detail
+    assert "State / 机器状态 = Jog" in detail
+    assert "MPos / Machine Position" in detail
+    assert "FS / Feed rate and Spindle speed" in detail
+    assert "Pn / Pin State" in detail
+    assert "不能作为完成依据" in detail
+
+
+def test_frame_detail_expands_tx_transmit_and_rx_receive() -> None:
+    tx_detail = format_frame_fields(TraceEvent("TX", "$J=G91 G21 X5 F100"))
+    ok_detail = format_frame_fields(TraceEvent("RX", "ok"))
+    assert "TX / Transmit" in tx_detail
+    assert "电脑 → GRBL" in tx_detail
+    assert "RX / Receive" in ok_detail
+    assert "GRBL → 电脑" in ok_detail
