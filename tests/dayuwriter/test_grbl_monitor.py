@@ -109,6 +109,10 @@ def test_protocol_guide_covers_serial_grbl_and_status_line_basics() -> None:
     terms = {entry.term for entry in entries}
     assert {"串口", "GRBL", "TX", "RX", "MPos", "ok"}.issubset(terms)
     assert all(entry.summary and entry.detail for entry in entries)
+    grbl = next(entry for entry in entries if entry.term == "GRBL")
+    assert "Arduino" in grbl.detail
+    assert "步进脉冲" in grbl.detail
+    assert "编码器" in grbl.detail
 
 
 def test_stream_row_keeps_live_log_compact_and_explanation_separate() -> None:

@@ -140,8 +140,8 @@ PROTOCOL_GUIDE = (
     ProtocolGuideEntry(
         "GRBL",
         "控制板里的运动固件",
-        "运行在 Arduino 上、负责把指令变成步进脉冲的软件。",
-        "Python 不直接控制 A4988 的每一个脉冲；Python 把指令交给 GRBL，GRBL 再管理运动状态和坐标。",
+        "运行在 Arduino 上的开源嵌入式 G-code 解析与运动控制固件。",
+        "在 Arduino UNO 上运行的 GRBL 接收 Python 文本指令，规划点动并产生 STEP/DIR 步进脉冲交给 A4988，再报告 Idle、Jog、MPos 等状态。它不做目标识别，也没有编码器反馈，因此 MPos 是固件内部记录，不能单独证明机械真实位置。",
         "Arduino UNO + GRBL 1.1f",
     ),
     ProtocolGuideEntry(
@@ -554,18 +554,18 @@ class ScrollableContent(tk.Frame):
 class ProtocolMonitorApp:
     """A calm three-page desktop classroom for real GRBL events."""
 
-    BG = "#eef3f4"
+    BG = "#f5f6f8"
     SURFACE = "#ffffff"
-    SURFACE_ALT = "#f5f7f7"
-    BORDER = "#cdd8da"
-    TEXT = "#172b34"
-    MUTED = "#5f6f73"
-    NAVY = "#0b7285"
-    TEAL = "#087f5b"
-    BLUE = "#4263eb"
-    PURPLE = "#7048e8"
-    GREEN = "#2b8a3e"
-    AMBER = "#e67700"
+    SURFACE_ALT = "#f8fafc"
+    BORDER = "#d9dee7"
+    TEXT = "#1f2937"
+    MUTED = "#667085"
+    NAVY = "#1f2937"
+    TEAL = "#047857"
+    BLUE = "#2563eb"
+    PURPLE = "#7c3aed"
+    GREEN = "#15803d"
+    AMBER = "#d97706"
     RED = "#b42318"
 
     def __init__(self, root: tk.Tk, port: str) -> None:
@@ -607,11 +607,11 @@ class ProtocolMonitorApp:
         style = ttk.Style(self._root)
         style.theme_use("clam")
         style.configure("Action.TButton", background=self.NAVY, foreground="#ffffff", padding=(12, 10), font=("Microsoft YaHei UI", 10, "bold"))
-        style.map("Action.TButton", background=[("active", "#0f8fa6"), ("disabled", "#b8c6c7")])
+        style.map("Action.TButton", background=[("active", "#374151"), ("disabled", "#c7cdd6")])
         style.configure("Move.TButton", background=self.SURFACE_ALT, foreground=self.TEXT, padding=(8, 8), font=("Microsoft YaHei UI", 10))
-        style.map("Move.TButton", background=[("active", "#d9eee7"), ("disabled", "#edf1f1")])
+        style.map("Move.TButton", background=[("active", "#eef2ff"), ("disabled", "#edf0f3")])
         style.configure("TNotebook", background=self.BG, borderwidth=0)
-        style.configure("TNotebook.Tab", background="#dce5e5", foreground=self.MUTED, padding=(18, 9), font=("Microsoft YaHei UI", 10, "bold"))
+        style.configure("TNotebook.Tab", background="#eef1f4", foreground=self.MUTED, padding=(18, 9), font=("Microsoft YaHei UI", 10, "bold"))
         style.map("TNotebook.Tab", background=[("selected", self.SURFACE)], foreground=[("selected", self.NAVY)])
 
     def _panel(self, parent: tk.Widget, row: int, column: int, *, padx: tuple[int, int] = (0, 0)) -> tk.Frame:
@@ -687,7 +687,7 @@ class ProtocolMonitorApp:
         band.grid(row=0, column=0, columnspan=3, sticky="ew", pady=(0, 14))
         band.columnconfigure(0, weight=1)
         tk.Label(band, text="通信因果链", bg=self.SURFACE, fg=self.NAVY, font=("Microsoft YaHei UI", 12, "bold"), anchor="w").grid(row=0, column=0, sticky="w", padx=18, pady=(12, 0))
-        tk.Label(band, text="CALL = Python function call（程序内部调用）   ·   TX = Transmit（电脑发送）   ·   RX = Receive（电脑接收）", bg=self.SURFACE, fg=self.MUTED, font=("Microsoft YaHei UI", 9), anchor="w").grid(row=1, column=0, sticky="w", padx=18, pady=(0, 4))
+        tk.Label(band, text="GRBL = Arduino 上的运动控制固件   ·   CALL = Python function call   ·   TX = Transmit（电脑发送）   ·   RX = Receive（电脑接收）", bg=self.SURFACE, fg=self.MUTED, font=("Microsoft YaHei UI", 9), anchor="w").grid(row=1, column=0, sticky="w", padx=18, pady=(0, 4))
         self._chain_canvas = tk.Canvas(band, height=72, bg=self.SURFACE, bd=0, highlightthickness=0)
         self._chain_canvas.grid(row=2, column=0, sticky="ew", padx=12)
         self._chain_canvas.bind("<Configure>", lambda _event: self._draw_causal_chain())
@@ -713,6 +713,14 @@ class ProtocolMonitorApp:
         glossary.grid(row=13, column=0, sticky="ew", padx=14, pady=(0, 16))
         tk.Label(glossary, text="术语速读", bg=self.SURFACE_ALT, fg=self.NAVY, font=("Microsoft YaHei UI", 9, "bold"), anchor="w").pack(anchor="w", padx=12, pady=(9, 4))
         tk.Label(glossary, text="CALL：Python 内部函数调用，尚未上串口\nTX / Transmit：电脑 → GRBL\nRX / Receive：GRBL → 电脑\nok：已接收，不等于完成\nIdle：GRBL 报告本轮控制结束", bg=self.SURFACE_ALT, fg=self.TEXT, font=("Microsoft YaHei UI", 9), justify="left", anchor="w").pack(anchor="w", padx=12, pady=(0, 10))
+        grbl = tk.Frame(controls, bg=self.SURFACE, highlightbackground=self.BORDER, highlightthickness=1)
+        grbl.grid(row=14, column=0, sticky="ew", padx=14, pady=(0, 12))
+        tk.Label(grbl, text="GRBL 是什么？", bg=self.SURFACE, fg=self.TEAL, font=("Microsoft YaHei UI", 11, "bold"), anchor="w").pack(anchor="w", padx=12, pady=(11, 4))
+        tk.Label(grbl, text="它是烧录在 Arduino UNO 里的开源运动控制固件，不是电脑软件，也不是 A4988 电机驱动板。\n\n真实链路：Python → USB/CH340 → GRBL → STEP/DIR 脉冲 → A4988 → 步进电机。\n\nGRBL 负责：解析 $J= 等指令、控制速度、生成步进脉冲、记录 MPos、回报 Idle/Jog。\n\nGRBL 不负责：识别杂草、理解相机画面、读取编码器真实位置、自动知道人工 P0。", bg=self.SURFACE, fg=self.TEXT, font=("Microsoft YaHei UI", 9), justify="left", anchor="w", wraplength=245).pack(anchor="w", padx=12, pady=(0, 11))
+        rule = tk.Frame(controls, bg=self.SURFACE_ALT, highlightbackground=self.BORDER, highlightthickness=1)
+        rule.grid(row=15, column=0, sticky="ew", padx=14, pady=(0, 16))
+        tk.Label(rule, text="怎样判断一次移动", bg=self.SURFACE_ALT, fg=self.BLUE, font=("Microsoft YaHei UI", 9, "bold"), anchor="w").pack(anchor="w", padx=12, pady=(9, 4))
+        tk.Label(rule, text="1. TX：电脑确实发出指令。\n2. RX ok：GRBL 确实接受指令。\n3. RX Jog：GRBL 仍在运动。\n4. RX Idle：GRBL 报告控制周期结束。\n5. 最后还要肉眼确认机构真实位移。", bg=self.SURFACE_ALT, fg=self.TEXT, font=("Microsoft YaHei UI", 9), justify="left", anchor="w").pack(anchor="w", padx=12, pady=(0, 10))
 
     def _axis_group(self, parent: tk.Frame, row: int, title: str, labels: tuple[str, str], actions: tuple[tuple[str, float, float], tuple[str, float, float]]) -> None:
         tk.Label(parent, text=title, bg=self.SURFACE, fg=self.MUTED, font=("Microsoft YaHei UI", 9, "bold")).grid(row=row, column=0, sticky="w", padx=16, pady=(4, 4))
