@@ -9,6 +9,8 @@ from communication.dayuwriter.grbl_monitor import (
     event_stage,
     format_trace_event,
     format_stream_row,
+    format_frame_fields,
+    parse_status_fields,
     protocol_guide,
     validate_monitor_motion,
 )
@@ -85,3 +87,23 @@ def test_stream_row_keeps_live_log_compact_and_explanation_separate() -> None:
     assert row[0] == "#07  RX  GRBL → RX"
     assert row[1] == "ok"
     assert row[2] == "GRBL 已接收指令；这不等于运动完成"
+
+
+def test_status_frame_is_split_into_named_fields_with_verified_meanings() -> None:
+    fields = parse_status_fields("<Jog|MPos:0.225,0.000,0.000|FS:100,0|Pn:P>")
+    assert [(field.name, field.value) for field in fields] == [
+        ("状态", "Jog"),
+        ("MPos", "X=0.225 mm，Y=0.000 mm，Z=0.000 mm"),
+        ("FS", "进给 100 mm/min；主轴 0 RPM"),
+        ("Pn", "P"),
+    ]
+    assert "运动中" in fields[0].meaning
+    assert "探针" in fields[3].meaning
+
+
+def test_frame_detail_explains_direction_and_each_status_token() -> None:
+    detail = format_frame_fields(TraceEvent("RX", "<Jog|MPos:0.225,0.000,0.000|FS:100,0|Pn:P>"))
+    assert "RX：电脑从 GRBL 收到" in detail
+    assert "状态 = Jog" in detail
+    assert "FS = 进给 100 mm/min；主轴 0 RPM" in detail
+    assert "Pn = P" in detail

@@ -91,6 +91,13 @@ class StatusExplanation:
 
 
 @dataclass(frozen=True)
+class StatusField:
+    name: str
+    value: str
+    meaning: str
+
+
+@dataclass(frozen=True)
 class ProtocolGuideEntry:
     term: str
     title: str
@@ -274,6 +281,88 @@ def explain_status(status_raw: str) -> StatusExplanation:
     return StatusExplanation(state, position, plain, technical)
 
 
+def parse_status_fields(status_raw: str) -> tuple[StatusField, ...]:
+    """Split a GRBL status frame into named, human-readable fields."""
+
+    body = status_raw.strip()
+    if not (body.startswith("<") and body.endswith(">")):
+        raise ValueError(f"invalid GRBL status frame: {status_raw!r}")
+    fields = body[1:-1].split("|")
+    if not fields or not fields[0]:
+        raise ValueError(f"status frame has no state: {status_raw!r}")
+    result: list[StatusField] = [
+        StatusField("状态", fields[0], _status_meaning(fields[0])),
+    ]
+    for field in fields[1:]:
+        name, separator, value = field.partition(":")
+        if not separator:
+            result.append(StatusField(name, "", "GRBL 返回了一个没有冒号的扩展字段。"))
+            continue
+        if name in {"MPos", "WPos"}:
+            values = value.split(",")
+            if len(values) < 3:
+                raise ValueError(f"invalid {name} field: {field!r}")
+            result.append(StatusField(name, f"X={values[0]} mm，Y={values[1]} mm，Z={values[2]} mm", "三个数依次对应 X、Y、Z 坐标。"))
+        elif name == "FS":
+            values = value.split(",")
+            if len(values) < 2:
+                raise ValueError(f"invalid FS field: {field!r}")
+            result.append(StatusField(name, f"进给 {values[0]} mm/min；主轴 {values[1]} RPM", "第一个数是当前进给速度，第二个数是主轴转速；本写字机主轴转速为 0。"))
+        elif name == "F":
+            result.append(StatusField(name, f"进给 {value} mm/min", "当前进给速度；没有主轴速度字段。"))
+        elif name == "Pn":
+            result.append(StatusField(name, value or "无触发输入", _pin_meaning(value)))
+        else:
+            result.append(StatusField(name, value, "GRBL 状态报告中的扩展字段；其精确定义取决于字段名称。"))
+    return tuple(result)
+
+
+def format_frame_fields(event: TraceEvent) -> str:
+    """Format direction plus field-by-field meaning for the current event pane."""
+
+    if event.kind == "RX" and event.text.strip().startswith("<"):
+        lines = ["RX：电脑从 GRBL 收到这条状态帧。", "< >：表示这一帧的开始和结束。"]
+        for field in parse_status_fields(event.text):
+            lines.append(f"{field.name} = {field.value}\n  {field.meaning}")
+        return "\n".join(lines)
+    if event.kind == "TX" and event.text.strip() == "?":
+        return "TX：电脑发给 GRBL。\n? = 实时状态查询，不是运动指令，不需要换行。"
+    if event.kind == "TX" and event.text.strip().startswith("$J="):
+        command = event.text.strip()
+        return f"TX：电脑发给 GRBL。\n$J= = Jog 请求；整行是 ASCII 文本，换行符表示指令结束。\n{command}"
+    if event.kind == "RX" and event.text.strip() == "ok":
+        return "RX：电脑从 GRBL 收到。\nok = GRBL 接收并接受了这一行；它不是运动完成证明。"
+    return f"{event.kind}：{event.text}"
+
+
+def _status_meaning(state: str) -> str:
+    return {
+        "Idle": "控制器空闲，可以接受下一次受限动作。",
+        "Jog": "控制器正在 Jog，机器处于运动中，不能把这一行当作完成。",
+        "Alarm": "控制器处于报警状态，需要先排除报警原因。",
+        "Hold": "运动被暂停，尚未完成。",
+    }.get(state, f"GRBL 当前状态为 {state}。")
+
+
+def _pin_meaning(value: str) -> str:
+    if not value:
+        return "没有检测到触发输入。"
+    meanings = []
+    labels = {
+        "X": "X 限位",
+        "Y": "Y 限位",
+        "Z": "Z 限位",
+        "P": "Probe 探针输入",
+        "D": "门控输入",
+        "H": "暂停输入",
+        "R": "软复位输入",
+        "S": "循环启动输入",
+    }
+    for pin in value:
+        meanings.append(labels.get(pin, f"未知输入 {pin}"))
+    return "GRBL 检测到触发：" + "、".join(meanings) + "。这表示输入电平被检测为触发，不自动证明机械端已经接触目标。"
+
+
 @dataclass(frozen=True)
 class ChainStage:
     key: str
@@ -426,6 +515,7 @@ class ProtocolMonitorApp:
         self._detail_heading = tk.StringVar(value="等待第一条真实通信")
         self._detail_plain = tk.StringVar(value="连接后，动作按钮会产生真实 CALL、TX、RX 事件；详细解释只显示最新一条，避免重复占满页面。")
         self._detail_technical = tk.StringVar(value="当前没有串口数据；界面不会生成模拟数据。")
+        self._detail_fields = tk.StringVar(value="等待一条状态帧后，这里会逐字段解释。")
         self._detail_code = tk.StringVar(value="等待真实 Python / 串口调用")
         self._detail_raw = tk.StringVar(value="原始帧：—")
         self._coord_plain = tk.StringVar(value="等待 GRBL 返回 MPos")
@@ -554,10 +644,14 @@ class ProtocolMonitorApp:
         tk.Label(panel, textvariable=self._detail_heading, bg=self.SURFACE, fg=self.TEXT, font=("Microsoft YaHei UI", 16, "bold"), anchor="w", justify="left", wraplength=370).grid(row=2, column=0, sticky="ew", padx=16, pady=(0, 12))
         self._detail_block(panel, 3, "直观解释", self._detail_plain, "#e8f3f7", self.NAVY, 11)
         self._detail_block(panel, 5, "技术说明", self._detail_technical, "#f4f1fb", self.PURPLE, 9)
-        self._detail_block(panel, 7, "对应代码", self._detail_code, "#f0f6fa", self.NAVY, 10, mono=True)
-        self._detail_block(panel, 9, "原始帧", self._detail_raw, "#fffaf0", self.AMBER, 9, mono=True)
+        self._detail_block(panel, 7, "字段逐项拆解", self._detail_fields, "#f8fbfd", self.TEAL, 9, mono=True)
+        self._detail_block(panel, 9, "对应代码", self._detail_code, "#f0f6fa", self.NAVY, 10, mono=True)
+        self._detail_block(panel, 11, "原始帧", self._detail_raw, "#fffaf0", self.AMBER, 9, mono=True)
+        self._mini_axes = tk.Canvas(panel, height=92, bg="#ffffff", bd=0, highlightbackground=self.BORDER, highlightthickness=1)
+        self._mini_axes.grid(row=13, column=0, sticky="ew", padx=14, pady=(8, 8))
+        self._draw_axis_legend()
         coord = tk.Frame(panel, bg="#f4f1fb", highlightbackground="#d8ccef", highlightthickness=1)
-        coord.grid(row=11, column=0, sticky="ew", padx=14, pady=(18, 14))
+        coord.grid(row=14, column=0, sticky="ew", padx=14, pady=(8, 14))
         tk.Label(coord, text="当前坐标", bg="#f4f1fb", fg=self.PURPLE, font=("Microsoft YaHei UI", 9, "bold")).pack(anchor="w", padx=12, pady=(9, 2))
         tk.Label(coord, textvariable=self._position, bg="#f4f1fb", fg=self.PURPLE, font=("Consolas", 13, "bold"), anchor="w").pack(anchor="w", padx=12, pady=(0, 3))
         tk.Label(coord, textvariable=self._coord_plain, bg="#f4f1fb", fg=self.TEXT, font=("Microsoft YaHei UI", 9), justify="left", wraplength=370, anchor="w").pack(anchor="w", padx=12, pady=(0, 6))
@@ -612,6 +706,18 @@ class ProtocolMonitorApp:
         info.grid(row=2, column=1, sticky="nsew", padx=(10, 20), pady=(16, 20))
         self._label(info, "坐标怎样读", size=14, bold=True).pack(anchor="w", padx=20, pady=(20, 12))
         self._label(info, "X 轴：右为正，左为负\nY 轴：前为正，后为负\nZ 轴：本机正方向向下\n\nMPos：GRBL 内部记录的坐标。\nP0：人工标记的物理参考点。\n\nP0 不是硬件回零，也不是编码器原点。重新连接或手工移动后，应先让物理笔架回到 P0，再把坐标解释为实验坐标。\n\n已测量的 XY 安全范围：\nX：−190 到 +190 mm\nY：−90 到 +140 mm\nZ：当前只做相对移动，未建立绝对边界。", size=11, color=self.TEXT, justify="left", anchor="nw", wraplength=440).pack(anchor="nw", padx=20, pady=(0, 20))
+
+    def _draw_axis_legend(self) -> None:
+        canvas = self._mini_axes
+        canvas.delete("all")
+        width = max(canvas.winfo_width(), 360)
+        canvas.create_line(35, 62, 145, 62, fill=self.NAVY, width=2, arrow="last")
+        canvas.create_text(148, 62, text="X+ 右", fill=self.NAVY, anchor="w", font=("Microsoft YaHei UI", 9, "bold"))
+        canvas.create_line(205, 62, 205, 22, fill=self.TEAL, width=2, arrow="last")
+        canvas.create_text(205, 14, text="Y+ 前", fill=self.TEAL, anchor="s", font=("Microsoft YaHei UI", 9, "bold"))
+        canvas.create_line(285, 25, 285, 70, fill=self.PURPLE, width=2, arrow="last")
+        canvas.create_text(294, 74, text="Z+ 下", fill=self.PURPLE, anchor="w", font=("Microsoft YaHei UI", 9, "bold"))
+        canvas.create_text(35, 83, text="− 方向与正方向相反：X−左、Y−后、Z−上", fill=self.MUTED, anchor="w", font=("Microsoft YaHei UI", 8))
 
     def _draw_coordinates(self) -> None:
         canvas = getattr(self, "_coord_canvas", None)
@@ -716,6 +822,10 @@ class ProtocolMonitorApp:
         self._detail_heading.set(explanation.heading)
         self._detail_plain.set(explanation.plain)
         self._detail_technical.set(explanation.technical)
+        try:
+            self._detail_fields.set(format_frame_fields(event))
+        except ValueError as exc:
+            self._detail_fields.set(f"字段解析失败：{exc}")
         self._detail_code.set(explanation.code)
         self._detail_raw.set(f"{event.kind}  |  {event.text!r}")
 
