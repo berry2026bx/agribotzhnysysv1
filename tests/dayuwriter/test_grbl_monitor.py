@@ -8,6 +8,7 @@ from communication.dayuwriter.grbl_monitor import (
     explain_trace_event,
     event_stage,
     format_trace_event,
+    format_stream_row,
     protocol_guide,
     validate_monitor_motion,
 )
@@ -77,3 +78,10 @@ def test_protocol_guide_covers_serial_grbl_and_status_line_basics() -> None:
     terms = {entry.term for entry in entries}
     assert {"串口", "GRBL", "TX", "RX", "MPos", "ok"}.issubset(terms)
     assert all(entry.summary and entry.detail for entry in entries)
+
+
+def test_stream_row_keeps_live_log_compact_and_explanation_separate() -> None:
+    row = format_stream_row(7, TraceEvent("RX", "ok"))
+    assert row[0] == "#07  RX  GRBL → RX"
+    assert row[1] == "ok"
+    assert row[2] == "GRBL 已接收指令；这不等于运动完成"
