@@ -16,6 +16,7 @@
 | `TX`，内容不是 `?` | TX 运动指令 | Python 已把运动指令写入串口 |
 | `RX ok` | RX ok | GRBL 已接收指令；这不等于运动完成 |
 | `TX ?` | TX ? | Python 正在询问 GRBL 当前状态 |
+| `RX <Jog...>` 等非 `Idle` 状态 | RX Jog | GRBL 报告运动仍在进行 |
 | `RX <Idle...>` | RX Idle | GRBL 报告 Idle，控制周期已完成 |
 
 非 `Idle` 状态会显示为运动中，`error`/`ALARM` 仍由控制器原有错误路径处理。`ok` 不被解释为物理运动完成。

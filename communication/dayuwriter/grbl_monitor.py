@@ -76,6 +76,7 @@ CHAIN_STAGES = (
     ChainStage("command", "TX 运动指令", "ASCII 写入 COM4"),
     ChainStage("accepted", "RX ok", "GRBL 接收，不代表完成"),
     ChainStage("poll", "TX ?", "读取实时状态"),
+    ChainStage("running", "RX Jog", "GRBL 报告运动进行中"),
     ChainStage("complete", "RX Idle", "控制周期完成"),
 )
 
