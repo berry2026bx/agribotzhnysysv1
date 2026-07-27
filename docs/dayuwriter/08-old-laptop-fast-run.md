@@ -4,6 +4,16 @@
 
 本清单不进行相机安装、P0 标定、目标检测或自动运动。
 
+当前后续标定电脑已有 Anaconda、VS Code 和 RealSense Viewer 2.50.0，未连接硬件。不要手动删除 Viewer 文件夹。
+
+## 0. 先统一 RealSense 软件版本
+
+1. 关闭当前 Viewer。
+2. 从 [RealSense SDK 2.58.1 发布页](https://github.com/RealSenseAI/librealsense/releases/tag/v2.58.1) 下载并安装 Windows SDK 2.58.1。
+3. 如果安装程序可以直接升级，直接安装即可；如果安装程序拒绝覆盖，再从 Windows“已安装的应用”卸载 `Intel RealSense SDK 2.0` 后重新安装 2.58.1。
+4. 安装后打开 Viewer 的 About，确认版本为 2.58.1。
+5. 不连接相机、不升级固件，先把版本确认截图发来。
+
 ## 版本分工
 
 - 旧电脑已有 RealSense Viewer `2.50.0`：可用于查看相机是否能枚举、RGB/Depth 是否能打开；它不是当前 Python 采集验证使用的 `pyrealsense2 2.58.x`。
@@ -11,9 +21,23 @@
 - 后续标定/视觉自动运动的电脑：安装与项目清单匹配的 `pyrealsense2 2.58.x` 和对应的 RealSense SDK/Viewer（当前基线为 SDK 2.58.1），再运行相机采集、P0 标定和视觉控制。
 - 2.50.0 与 2.58.x 版本不一致不代表一定不能打开相机，但不能把旧 Viewer 的显示结果当作当前 Python 管线已验证。
 
-## 1. 获取最新代码
+## 1. 获取最新代码（不需要 Git）
 
-打开 PowerShell，始终使用一份新的代码目录：
+在浏览器打开分支 ZIP 地址并下载：
+
+```text
+https://github.com/berry2026bx/agribotzhnysysv1/archive/refs/heads/codex/dayuwriter-recovery-execution.zip
+```
+
+解压到例如：
+
+```text
+C:\Users\Administrator\Documents\agribotzhnysysv1-dayuwriter
+```
+
+在解压目录中打开包含 `communication`、`vision`、`environment` 文件夹的内层项目目录，再用 VS Code 打开该目录。
+
+如果这台电脑以后安装了 Git，也可以使用下面的命令获取代码：
 
 ```powershell
 $dayuDir = "$env:USERPROFILE\Documents\agribotzhnysysv1-dayuwriter"
