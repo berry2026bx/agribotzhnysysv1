@@ -107,12 +107,20 @@ def test_coordinate_history_uses_real_mpos_frames_and_reports_delta() -> None:
 def test_protocol_guide_covers_serial_grbl_and_status_line_basics() -> None:
     entries = protocol_guide()
     terms = {entry.term for entry in entries}
-    assert {"串口", "GRBL", "TX", "RX", "MPos", "ok"}.issubset(terms)
+    assert {"串口", "COMx", "CH340", "GRBL", "STEP/DIR", "TX", "RX", "MPos", "ok"}.issubset(terms)
     assert all(entry.summary and entry.detail for entry in entries)
     grbl = next(entry for entry in entries if entry.term == "GRBL")
     assert "Arduino" in grbl.detail
     assert "步进脉冲" in grbl.detail
     assert "编码器" in grbl.detail
+    serial = next(entry for entry in entries if entry.term == "串口")
+    assert "Windows" in serial.detail
+    assert "COMx" in serial.detail
+    assert "CH340" in serial.detail
+    comx = next(entry for entry in entries if entry.term == "COMx")
+    assert "--port COM4" in comx.detail
+    ch340 = next(entry for entry in entries if entry.term == "CH340")
+    assert "不负责解析 G-code" in ch340.detail
 
 
 def test_stream_row_keeps_live_log_compact_and_explanation_separate() -> None:

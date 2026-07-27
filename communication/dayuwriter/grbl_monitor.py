@@ -120,8 +120,22 @@ PROTOCOL_GUIDE = (
         "串口",
         "什么是串口？",
         "电脑与控制板之间的一条有顺序的数据通道。",
-        "这里使用 USB 转 CH340 芯片，把电脑里的字节送到 Arduino/GRBL，再把返回字节送回来。",
+        "Windows 会给 USB 串口设备分配一个逻辑名称，例如 COM4。电脑先把数据交给 CH340 USB-UART 桥接芯片，再由它转换成 Arduino 能读的 UART 电平；返回数据沿相反方向回到 Python。COMx 只是 Windows 的设备地址，不是 GRBL，也不是网络端口。换 USB 插口、换电脑或重装驱动后，编号可能变化；程序必须使用设备管理器当前显示的 COMx，并以 115200、8-N-1 打开。",
         "COMx · 115200 baud · 8-N-1",
+    ),
+    ProtocolGuideEntry(
+        "COMx",
+        "Windows 设备地址",
+        "例如 COM4：Python 找到 USB 串口设备的入口名称。",
+        "COM4 不是固件名称，也不是电机驱动器名称。启动参数 --port COM4 只是在告诉 pySerial 打开哪个 Windows 串口；如果设备管理器显示的是 COM7，程序就必须改用 COM7。界面显示的端口来自启动参数，不会自动替换成别的编号。",
+        "python -m communication.dayuwriter.grbl_monitor --port COM4",
+    ),
+    ProtocolGuideEntry(
+        "CH340",
+        "USB-UART 桥接芯片",
+        "把 USB 数据转换成 Arduino UART 串口数据的硬件。",
+        "CH340 负责电脑与 Arduino 串口电平之间的转换，不负责解析 G-code、不规划运动，也不产生电机脉冲。驱动正常时，Windows 才会在设备管理器中显示 USB-SERIAL CH340 (COMx)。",
+        "电脑 USB → CH340 → Arduino UART",
     ),
     ProtocolGuideEntry(
         "115200",
@@ -141,8 +155,15 @@ PROTOCOL_GUIDE = (
         "GRBL",
         "控制板里的运动固件",
         "运行在 Arduino 上的开源嵌入式 G-code 解析与运动控制固件。",
-        "在 Arduino UNO 上运行的 GRBL 接收 Python 文本指令，规划点动并产生 STEP/DIR 步进脉冲交给 A4988，再报告 Idle、Jog、MPos 等状态。它不做目标识别，也没有编码器反馈，因此 MPos 是固件内部记录，不能单独证明机械真实位置。",
+        "GRBL 是烧录在 Arduino UNO 微控制器中的固件。它读取串口文本，检查 $J= 等指令是否合法，规划速度与加速度，生成 STEP/DIR 步进脉冲交给 A4988，并维护 Idle、Jog、Hold、Alarm 等状态和 MPos 记录。它不做目标识别、不理解相机像素、不读取编码器真实位置，也不负责 USB 驱动；因此 MPos 只能证明 GRBL 的内部记录，不能单独证明滑台没有丢步。",
         "Arduino UNO + GRBL 1.1f",
+    ),
+    ProtocolGuideEntry(
+        "STEP/DIR",
+        "电机驱动信号",
+        "GRBL 发给 A4988 的两类数字信号。",
+        "STEP 的每个脉冲通常对应一个微步动作，DIR 表示正反方向。A4988 根据这些信号给步进电机绕组通电；同步带、导轨和丝杆再把旋转变成 X/Y/Z 机械位移。",
+        "GRBL → STEP/DIR → A4988 → 42 步进电机",
     ),
     ProtocolGuideEntry(
         "TX",
@@ -650,14 +671,15 @@ class ProtocolMonitorApp:
         header.columnconfigure(1, weight=1)
         tk.Label(header, text="DAYUWRITER  /  LIVE CONTROL", bg=self.BG, fg=self.TEAL, font=("Consolas", 10, "bold")).grid(row=0, column=0, sticky="w")
         tk.Label(header, text="现场控制与通信说明", bg=self.BG, fg=self.TEXT, font=("Microsoft YaHei UI", 24, "bold")).grid(row=1, column=0, sticky="w", pady=(2, 0))
-        tk.Label(header, text="实时数据、协议解释、坐标信息分层展示，互不挤占。", bg=self.BG, fg=self.MUTED, font=("Microsoft YaHei UI", 11)).grid(row=2, column=0, sticky="w", pady=(3, 0))
+        tk.Label(header, text="先看真实链路，再看每一行 TX/RX，最后用 MPos 和现场观察确认结果。", bg=self.BG, fg=self.MUTED, font=("Microsoft YaHei UI", 11)).grid(row=2, column=0, sticky="w", pady=(3, 0))
         metrics = tk.Frame(header, bg=self.BG)
         metrics.grid(row=0, column=1, rowspan=3, sticky="e")
-        self._metric(metrics, "串口", self._port, 0, self.NAVY)
+        self._metric(metrics, "Windows 串口", self._port, 0, self.NAVY)
         self._metric(metrics, "连接", self._connection, 1, self.TEAL)
         self._metric(metrics, "GRBL", self._grbl_state, 2, self.AMBER)
         self._metric(metrics, "坐标", self._position, 3, self.BLUE)
         tk.Label(metrics, textvariable=self._event_counter, bg=self.BG, fg=self.MUTED, font=("Consolas", 9)).grid(row=1, column=0, columnspan=4, sticky="e", pady=(7, 0))
+        tk.Label(metrics, text="端口来自启动参数 --port；GRBL 固件运行在 Arduino 内部。", bg=self.BG, fg=self.MUTED, font=("Microsoft YaHei UI", 8)).grid(row=2, column=0, columnspan=4, sticky="e", pady=(2, 0))
 
     def _metric(self, parent: tk.Widget, title: str, value: tk.Variable | str, column: int, color: str) -> None:
         block = tk.Frame(parent, bg=self.BG)
@@ -687,11 +709,12 @@ class ProtocolMonitorApp:
         band.grid(row=0, column=0, columnspan=3, sticky="ew", pady=(0, 14))
         band.columnconfigure(0, weight=1)
         tk.Label(band, text="通信因果链", bg=self.SURFACE, fg=self.NAVY, font=("Microsoft YaHei UI", 12, "bold"), anchor="w").grid(row=0, column=0, sticky="w", padx=18, pady=(12, 0))
-        tk.Label(band, text="GRBL = Arduino 上的运动控制固件   ·   CALL = Python function call   ·   TX = Transmit（电脑发送）   ·   RX = Receive（电脑接收）", bg=self.SURFACE, fg=self.MUTED, font=("Microsoft YaHei UI", 9), anchor="w").grid(row=1, column=0, sticky="w", padx=18, pady=(0, 4))
+        tk.Label(band, text="COMx 是 Windows 设备地址  ·  CH340 是 USB-UART 桥  ·  GRBL 是 Arduino 内的运动固件  ·  TX/RX 是数据方向", bg=self.SURFACE, fg=self.MUTED, font=("Microsoft YaHei UI", 9), anchor="w").grid(row=1, column=0, sticky="w", padx=18, pady=(0, 4))
         self._chain_canvas = tk.Canvas(band, height=72, bg=self.SURFACE, bd=0, highlightthickness=0)
         self._chain_canvas.grid(row=2, column=0, sticky="ew", padx=12)
         self._chain_canvas.bind("<Configure>", lambda _event: self._draw_causal_chain())
-        tk.Label(band, textvariable=self._chain_summary, bg=self.SURFACE, fg=self.TEXT, font=("Microsoft YaHei UI", 9), anchor="w", justify="left", wraplength=1400).grid(row=3, column=0, sticky="ew", padx=18, pady=(1, 10))
+        tk.Label(band, text="物理执行链：GRBL → STEP/DIR 脉冲 → A4988 → 步进电机 → 同步带/导轨/丝杆 → 滑台。反馈链：GRBL → RX 状态帧 → Python → 本页面。", bg=self.SURFACE, fg=self.TEXT, font=("Microsoft YaHei UI", 9), anchor="w", justify="left", wraplength=1400).grid(row=3, column=0, sticky="ew", padx=18, pady=(1, 2))
+        tk.Label(band, textvariable=self._chain_summary, bg=self.SURFACE, fg=self.TEXT, font=("Microsoft YaHei UI", 9), anchor="w", justify="left", wraplength=1400).grid(row=4, column=0, sticky="ew", padx=18, pady=(1, 10))
         self._draw_causal_chain()
 
     def _build_controls(self, parent: tk.Frame, row: int) -> None:
@@ -708,17 +731,21 @@ class ProtocolMonitorApp:
         self._axis_group(controls, 7, "Y 轴 · 前后", ("Y 后 −5 mm", "Y 前 +5 mm"), (BUTTON_ACTIONS["Y 向后 -5 mm"], BUTTON_ACTIONS["Y 向前 +5 mm"]))
         self._axis_group(controls, 9, "Z 轴 · 上下", ("Z 上 −1 mm", "Z 下 +1 mm"), (BUTTON_ACTIONS["Z 向上 -1 mm"], BUTTON_ACTIONS["Z 向下 +1 mm"]))
         self._label(controls, "连接参数", size=9, color=self.NAVY, bold=True).grid(row=11, column=0, sticky="w", padx=16, pady=(18, 3))
-        self._label(controls, "115200 baud · 8-N-1 · 无流控\nP0 是手动参考点，不是编码器原点。", size=9, color=self.MUTED, justify="left").grid(row=12, column=0, sticky="w", padx=16, pady=(0, 18))
+        self._label(controls, f"Windows 端口：{self._port}\n115200 baud · 8-N-1 · 无流控\nP0 是手动参考点，不是编码器原点。", size=9, color=self.MUTED, justify="left").grid(row=12, column=0, sticky="w", padx=16, pady=(0, 14))
         glossary = tk.Frame(controls, bg=self.SURFACE_ALT, highlightbackground=self.BORDER, highlightthickness=1)
         glossary.grid(row=13, column=0, sticky="ew", padx=14, pady=(0, 16))
-        tk.Label(glossary, text="术语速读", bg=self.SURFACE_ALT, fg=self.NAVY, font=("Microsoft YaHei UI", 9, "bold"), anchor="w").pack(anchor="w", padx=12, pady=(9, 4))
-        tk.Label(glossary, text="CALL：Python 内部函数调用，尚未上串口\nTX / Transmit：电脑 → GRBL\nRX / Receive：GRBL → 电脑\nok：已接收，不等于完成\nIdle：GRBL 报告本轮控制结束", bg=self.SURFACE_ALT, fg=self.TEXT, font=("Microsoft YaHei UI", 9), justify="left", anchor="w").pack(anchor="w", padx=12, pady=(0, 10))
+        tk.Label(glossary, text="COMx / CH340 是什么？", bg=self.SURFACE_ALT, fg=self.NAVY, font=("Microsoft YaHei UI", 10, "bold"), anchor="w").pack(anchor="w", padx=12, pady=(9, 4))
+        tk.Label(glossary, text=f"COM4 只是一个例子；本次启动配置是 {self._port}。Windows 给 USB 设备分配 COMx 名称，CH340 把 USB 数据转换成 Arduino UART。\n\nCOMx 不等于 GRBL：COMx 是电脑端入口，GRBL 是控制板里的固件。换 USB 插口或驱动后，编号可能变化。", bg=self.SURFACE_ALT, fg=self.TEXT, font=("Microsoft YaHei UI", 9), justify="left", anchor="w", wraplength=245).pack(anchor="w", padx=12, pady=(0, 10))
+        glossary2 = tk.Frame(controls, bg=self.SURFACE, highlightbackground=self.BORDER, highlightthickness=1)
+        glossary2.grid(row=14, column=0, sticky="ew", padx=14, pady=(0, 12))
+        tk.Label(glossary2, text="术语速读：每个词在链路中的位置", bg=self.SURFACE, fg=self.NAVY, font=("Microsoft YaHei UI", 10, "bold"), anchor="w").pack(anchor="w", padx=12, pady=(9, 4))
+        tk.Label(glossary2, text="CALL / function call：Python 内部调用，还未出电脑。\nTX / Transmit：电脑 → GRBL，发送字节。\nRX / Receive：GRBL → 电脑，返回字节。\nok：这一行已被接受，不等于电机停止。\nIdle：GRBL 报告本轮控制周期结束。", bg=self.SURFACE, fg=self.TEXT, font=("Microsoft YaHei UI", 9), justify="left", anchor="w", wraplength=245).pack(anchor="w", padx=12, pady=(0, 10))
         grbl = tk.Frame(controls, bg=self.SURFACE, highlightbackground=self.BORDER, highlightthickness=1)
-        grbl.grid(row=14, column=0, sticky="ew", padx=14, pady=(0, 12))
+        grbl.grid(row=15, column=0, sticky="ew", padx=14, pady=(0, 12))
         tk.Label(grbl, text="GRBL 是什么？", bg=self.SURFACE, fg=self.TEAL, font=("Microsoft YaHei UI", 11, "bold"), anchor="w").pack(anchor="w", padx=12, pady=(11, 4))
         tk.Label(grbl, text="它是烧录在 Arduino UNO 里的开源运动控制固件，不是电脑软件，也不是 A4988 电机驱动板。\n\n真实链路：Python → USB/CH340 → GRBL → STEP/DIR 脉冲 → A4988 → 步进电机。\n\nGRBL 负责：解析 $J= 等指令、控制速度、生成步进脉冲、记录 MPos、回报 Idle/Jog。\n\nGRBL 不负责：识别杂草、理解相机画面、读取编码器真实位置、自动知道人工 P0。", bg=self.SURFACE, fg=self.TEXT, font=("Microsoft YaHei UI", 9), justify="left", anchor="w", wraplength=245).pack(anchor="w", padx=12, pady=(0, 11))
         rule = tk.Frame(controls, bg=self.SURFACE_ALT, highlightbackground=self.BORDER, highlightthickness=1)
-        rule.grid(row=15, column=0, sticky="ew", padx=14, pady=(0, 16))
+        rule.grid(row=16, column=0, sticky="ew", padx=14, pady=(0, 16))
         tk.Label(rule, text="怎样判断一次移动", bg=self.SURFACE_ALT, fg=self.BLUE, font=("Microsoft YaHei UI", 9, "bold"), anchor="w").pack(anchor="w", padx=12, pady=(9, 4))
         tk.Label(rule, text="1. TX：电脑确实发出指令。\n2. RX ok：GRBL 确实接受指令。\n3. RX Jog：GRBL 仍在运动。\n4. RX Idle：GRBL 报告控制周期结束。\n5. 最后还要肉眼确认机构真实位移。", bg=self.SURFACE_ALT, fg=self.TEXT, font=("Microsoft YaHei UI", 9), justify="left", anchor="w").pack(anchor="w", padx=12, pady=(0, 10))
 
@@ -785,27 +812,79 @@ class ProtocolMonitorApp:
         parent.columnconfigure(0, weight=1)
         parent.rowconfigure(2, weight=1)
         tk.Label(parent, text="通信入门", bg=self.BG, fg=self.TEXT, font=("Microsoft YaHei UI", 20, "bold"), anchor="w").grid(row=0, column=0, sticky="w", padx=20, pady=(20, 4))
-        tk.Label(parent, text="先理解数据方向，再看每一行协议内容。", bg=self.BG, fg=self.MUTED, font=("Microsoft YaHei UI", 11), anchor="w").grid(row=1, column=0, sticky="w", padx=20, pady=(0, 2))
+        tk.Label(parent, text=f"当前显示端口：{self._port}。端口由启动参数 --port 传入；本页解释的是实际设备链路，不会把 COMx 当成 GRBL。", bg=self.BG, fg=self.MUTED, font=("Microsoft YaHei UI", 11), anchor="w").grid(row=1, column=0, sticky="w", padx=20, pady=(0, 2))
         text = scrolledtext.ScrolledText(parent, wrap="word", bg="#ffffff", fg=self.TEXT, relief="flat", bd=0, padx=28, pady=22, font=("Microsoft YaHei UI", 11), spacing1=2, spacing3=5)
         text.grid(row=2, column=0, sticky="nsew", padx=20, pady=(16, 20))
         text.tag_configure("section", foreground=self.NAVY, font=("Microsoft YaHei UI", 15, "bold"), spacing1=13)
         text.tag_configure("term", foreground=self.TEAL, font=("Microsoft YaHei UI", 12, "bold"), spacing1=8)
         text.tag_configure("body", foreground=self.TEXT)
         text.tag_configure("code", foreground=self.AMBER, font=("Consolas", 10))
-        text.insert("end", "先看完整链路\n", "section")
-        text.insert("end", "按钮点击 → Python 函数 → pySerial 写入 TX → GRBL 解析 → 步进驱动器执行 → GRBL 通过 RX 返回状态。Python 负责提出请求和等待结果；GRBL 负责运动状态机、步进脉冲和坐标记录。\n\n", "body")
-        text.insert("end", "一条运动动作通常会产生这些事件\n", "section")
-        for line in (
-            ("1  CALL", "Python 调用 controller.jog(...)。这是程序内部的函数调用，还没有把运动文本写到线路上。"),
-            ("2  TX $J=...", "电脑把 ASCII 文本写到当前串口。G91 表示相对移动，G21 表示毫米，X/Y/Z 是移动量，F 是速度。"),
-            ("3  RX ok", "GRBL 已经接受文本。它只是接收确认，不能证明机械运动已经结束。"),
-            ("4  TX ?", "电脑发送一个实时查询字符，询问 GRBL 当前状态；它不是运动指令，不会让机器移动。"),
-            ("5  RX <Jog|MPos:...>", "GRBL 报告自己还在 Jog 状态，并给出当前内部坐标。"),
-            ("6  RX <Idle|MPos:...>", "GRBL 回到 Idle。控制器把它作为本次动作完成的条件。"),
+        text.insert("end", "一、先分清三个最容易混淆的名字\n", "section")
+        for term, detail in (
+            ("COMx · Windows 设备地址", f"本次界面配置为 {self._port}。它只是 Windows 给 USB 串口设备分配的逻辑名称，Python 用 --port 参数打开它。换插口、换电脑或重新安装驱动后，COM 编号可能变化。"),
+            ("CH340 · USB-UART 桥接芯片", "它位于 USB 与 Arduino 串口之间，只做数据格式和电平转换。CH340 不解析 G-code、不控制速度、不产生电机脉冲。驱动正常时，设备管理器会显示 USB-SERIAL CH340 (COMx)。"),
+            ("GRBL · Arduino 内的运动固件", "它烧录在 Arduino UNO 的微控制器里，负责读取串口文本、解析 G-code/Jog、规划运动、生成 STEP/DIR 脉冲、维护状态和 MPos。GRBL 不是 COM 端口，也不是 A4988 驱动板。"),
         ):
-            text.insert("end", f"{line[0]}\n", "term")
+            text.insert("end", f"{term}\n", "term")
+            text.insert("end", f"{detail}\n\n", "body")
+
+        text.insert("end", "二、从按钮到机械运动的完整因果链\n", "section")
+        chain = (
+            ("1  人的动作", "点击 X/Y/Z 按钮；按钮本身不直接接触电机，只产生一个软件事件。"),
+            ("2  Python 函数", "界面调用 GrblWorker.request_jog，再由持久 GrblController.jog(...) 执行。持久连接避免每次动作都重新打开串口。"),
+            ("3  pySerial", "Python 把 ASCII 文本和换行符写入 Windows 的当前 COMx 端点。这里的 TX 是 Transmit，表示电脑发送方向。"),
+            ("4  USB 总线", "USB 数据到达 CH340；Windows 驱动把它呈现为 COMx，程序不需要直接操作 USB 电气信号。"),
+            ("5  CH340 转换", "CH340 把 USB 数据转换成 Arduino UART 可以接收的串行字节，再送入 Arduino 的 RX 引脚。"),
+            ("6  Arduino UART", "Arduino 按 115200、8-N-1 的串口约定逐字节接收；这是传输格式，不是运动算法。"),
+            ("7  GRBL 解析", "GRBL 识别 $J=G91 G21 X5 F100：$J= 表示 Jog，G91 表示相对移动，G21 表示毫米，X5 是增量 5 mm，F100 是速度 100 mm/min。"),
+            ("8  GRBL 规划", "固件检查边界、速度和当前状态，安排加速度和每一步的时间。它把文本意图变成时序动作。"),
+            ("9  STEP/DIR", "GRBL 输出 STEP 脉冲和 DIR 方向信号。STEP 的脉冲频率影响速度，DIR 的电平决定正反方向。"),
+            ("10  A4988", "A4988 接收 STEP/DIR 并给步进电机绕组通电；细分开关会影响每个脉冲对应的角度。"),
+            ("11  机械机构", "42 步进电机带动同步带、直线导轨或 Z 轴丝杆，最终让笔架产生 X/Y/Z 位移。"),
+            ("12  GRBL 状态", "GRBL 同时维护 Idle、Jog、Hold、Alarm 等状态，并更新内部 MPos。MPos 是估算/记录值，不是编码器实测。"),
+            ("13  返回电脑", "GRBL 通过 Arduino UART → CH340 → USB → Windows COMx 返回 RX 字节；Python 读取后更新本页的流水、状态和坐标历程。"),
+        )
+        for title, detail in chain:
+            text.insert("end", f"{title}\n", "term")
+            text.insert("end", f"{detail}\n\n", "body")
+
+        text.insert("end", "三、一条真实点动会看到什么\n", "section")
+        for line in (
+            ("CALL / Python function call", "程序内部开始执行，尚未离开电脑；例如 controller.jog(JogCommand(...))。"),
+            ("TX  $J=G91 G21 X5 F100\\n", "电脑向 GRBL 发送一行 ASCII 文本。换行符告诉 GRBL 这一行已经结束。"),
+            ("RX  ok", "GRBL 已接收并接受这一行，可能已经排入运动规划；ok 不是电机停止证明。"),
+            ("TX  ?", "电脑发送 GRBL 实时状态查询字符。它不需要换行，也不会让机器移动。"),
+            ("RX  <Jog|MPos:...>", "GRBL 报告仍处于 Jog；MPos 后三个数依次是 X、Y、Z 的内部坐标。"),
+            ("RX  <Idle|MPos:...>", "GRBL 报告回到 Idle，说明控制器认为本轮运动周期结束；还要肉眼观察机构是否真的移动到位。"),
+        ):
+            text.insert("end", f"{line[0]}\n", "code" if line[0].startswith(("TX", "RX")) else "term")
             text.insert("end", f"{line[1]}\n\n", "body")
-        text.insert("end", "术语词典\n", "section")
+
+        text.insert("end", "四、GRBL 负责什么、不负责什么\n", "section")
+        text.insert("end", "GRBL 负责：\n", "term")
+        text.insert("end", "• 解析有限的 G-code/Jog 文本并返回 ok/error。\n• 管理 Idle、Jog、Hold、Alarm 等运动状态。\n• 计算速度、加速度和步进时序。\n• 输出 STEP/DIR 信号给 A4988。\n• 维护 MPos，并通过状态帧返回给上位机。\n\n", "body")
+        text.insert("end", "GRBL 不负责：\n", "term")
+        text.insert("end", "• 不识别相机图像、杂草或目标物品。\n• 不理解像素坐标，也不把相机坐标自动转换成机器坐标。\n• 不读取闭环编码器，不能独立发现丢步。\n• 不知道人工标记的 P0，也不替代硬件回零。\n• 不安装 CH340 驱动，也不决定 Windows 的 COM 编号。\n\n", "body")
+
+        text.insert("end", "五、如何读懂一条状态帧\n", "section")
+        text.insert("end", "示例：<Jog|MPos:0.225,0.000,0.000|FS:100,0|Pn:P>\n", "code")
+        for field, detail in (
+            ("<  >", "尖括号是状态帧边界，表示这不是普通 G-code 回显。"),
+            ("Jog", "State / 机器状态：GRBL 认为当前正在点动。"),
+            ("MPos:0.225,0.000,0.000", "Machine Position / 机器位置：X=0.225 mm、Y=0.000 mm、Z=0.000 mm；这是固件内部记录。"),
+            ("FS:100,0", "Feed rate and Spindle speed：进给速度 100 mm/min、主轴速度 0 RPM；本写字机主要关注进给。"),
+            ("Pn:P", "Pin State：P 表示探针输入被报告为触发；它不是‘已经碰到目标’的视觉结论，做 Z 标定前必须单独处理。"),
+        ):
+            text.insert("end", f"{field}\n", "term")
+            text.insert("end", f"{detail}\n\n", "body")
+
+        text.insert("end", "六、证据强度：什么可以证明什么\n", "section")
+        text.insert("end", "TX 只能证明电脑确实写出了指令；RX ok 只能证明 GRBL 接受了指令；RX Jog 说明 GRBL 报告仍在运动；RX Idle 说明 GRBL 报告控制周期结束；MPos 只能证明固件内部位置记录变化。最终要把通信证据、坐标变化和现场肉眼观察放在一起，才能说‘这次移动完成且方向正确’。断电、手推、复位或疑似丢步后，必须重新把笔架物理对齐到 P0。\n\n", "body")
+
+        text.insert("end", "七、这条链路怎样连接到后续视觉功能\n", "section")
+        text.insert("end", "相机先得到像素坐标；深度相机还可以得到相机坐标。之后必须用独立标定得到‘相机坐标 → P0/机器坐标’的变换，并用已知点验证误差。视觉算法只负责提出目标位置，Python 控制器负责检查边界、生成受限 Jog，GRBL 负责执行脉冲；相机坐标不能直接塞进 GRBL。\n\n", "body")
+
+        text.insert("end", "八、术语词典（可在实时页对照）\n", "section")
         for entry in protocol_guide():
             text.insert("end", f"{entry.term} · {entry.title}\n", "term")
             text.insert("end", f"{entry.summary}\n{entry.detail}\n示例：{entry.example}\n\n", "body")
