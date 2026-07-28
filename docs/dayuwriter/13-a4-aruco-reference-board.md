@@ -27,11 +27,17 @@ its height or tilt, or P0 relative to the writer changes.
 This is a one-time physical operation after mounting a new board.
 
 1. Keep the pen tip clear of the paper and write surface.
-2. Use the existing bounded console to put the pen tip on the printed P0 cross.
-3. From P0, verify that bounded `X+30 mm` and `Y+30 mm` jogs align with the
-   corresponding printed reference crosses. Adjust the board physically until
-   all three checks are correct.
-4. Secure the board. Then use the Register board button on the local page and
+2. Rotate the board so its printed X+ direction points toward the writer's
+   physical X+ direction (right in the previously verified setup) and its
+   printed Y+ direction points toward physical Y+ (forward).
+3. Put the pen tip on the printed P0 cross. This must be the existing physical
+   P0 mark used by the writer, not a new origin.
+4. From P0, use a bounded X+30 mm jog. The pen tip must land on the printed
+   `X+30 mm` cross to the right of P0. Return to P0, then use a bounded Y+30
+   mm jog; the pen tip must land on the printed `Y+30 mm` cross below P0.
+5. Adjust the board physically until all three checks are correct, then secure
+   the rigid backing.
+6. Use the Register board button on the local page and
    tick the confirmation only after the three physical alignments are complete.
 
 The button records the confirmation. It does not command a motor, send G-code,

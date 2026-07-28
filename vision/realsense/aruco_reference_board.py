@@ -116,20 +116,32 @@ def render_a4_svg(layout: ArucoBoardLayout) -> str:
         raise BoardRegistrationError(f"unsupported board revision: {layout.revision}")
     marker_elements = "\n".join(_svg_marker(marker) for marker in layout.markers)
     p0_x, p0_y = layout.p0_board_xy_mm
+    x_plus_30_x = p0_x + 30.0
+    y_plus_30_y = p0_y + 30.0
     return f'''<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="{layout.width_mm:g}mm" height="{layout.height_mm:g}mm" viewBox="0 0 {layout.width_mm:g} {layout.height_mm:g}">
   <rect x="0" y="0" width="{layout.width_mm:g}" height="{layout.height_mm:g}" fill="white"/>
   <text x="{p0_x:g}" y="10" font-family="Arial, sans-serif" font-size="5" text-anchor="middle">{layout.revision} | {ARUCO_DICTIONARY_NAME} | print at 100%</text>
   {marker_elements}
-  <g stroke="#12532b" stroke-width="0.8" fill="none">
+  <g id="p0-cross" stroke="#12532b" stroke-width="0.8" fill="none">
     <line x1="{p0_x - 6:g}" y1="{p0_y:g}" x2="{p0_x + 6:g}" y2="{p0_y:g}"/>
     <line x1="{p0_x:g}" y1="{p0_y - 6:g}" x2="{p0_x:g}" y2="{p0_y + 6:g}"/>
+  </g>
+  <g id="x-plus-30-cross" stroke="#12532b" stroke-width="0.8" fill="none">
+    <line x1="{x_plus_30_x - 4:g}" y1="{p0_y:g}" x2="{x_plus_30_x + 4:g}" y2="{p0_y:g}"/>
+    <line x1="{x_plus_30_x:g}" y1="{p0_y - 4:g}" x2="{x_plus_30_x:g}" y2="{p0_y + 4:g}"/>
+  </g>
+  <g id="y-plus-30-cross" stroke="#12532b" stroke-width="0.8" fill="none">
+    <line x1="{p0_x - 4:g}" y1="{y_plus_30_y:g}" x2="{p0_x + 4:g}" y2="{y_plus_30_y:g}"/>
+    <line x1="{p0_x:g}" y1="{y_plus_30_y - 4:g}" x2="{p0_x:g}" y2="{y_plus_30_y + 4:g}"/>
+  </g>
+  <g stroke="#12532b" stroke-width="0.8" fill="none">
     <line x1="{p0_x + 8:g}" y1="{p0_y:g}" x2="{p0_x + 28:g}" y2="{p0_y:g}"/>
     <line x1="{p0_x:g}" y1="{p0_y + 8:g}" x2="{p0_x:g}" y2="{p0_y + 28:g}"/>
   </g>
   <g fill="#12532b" font-family="Arial, sans-serif" font-size="4">
-    <text x="{p0_x + 30:g}" y="{p0_y + 1.5:g}">X+</text>
-    <text x="{p0_x + 2:g}" y="{p0_y + 34:g}">Y+</text>
+    <text x="{x_plus_30_x + 6:g}" y="{p0_y + 1.5:g}">X+30 mm</text>
+    <text x="{p0_x + 6:g}" y="{y_plus_30_y + 2:g}">Y+30 mm</text>
     <text x="{p0_x + 8:g}" y="{p0_y - 8:g}">P0</text>
   </g>
   <g stroke="black" stroke-width="0.8" fill="none">

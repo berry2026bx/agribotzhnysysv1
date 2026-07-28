@@ -41,6 +41,11 @@ def test_svg_is_exact_a4_and_has_scale_bar_and_six_markers(tmp_path: Path) -> No
     assert 'width="297mm"' in svg
     assert 'height="210mm"' in svg
     assert "100 mm verification scale" in svg
+    assert 'id="p0-cross"' in svg
+    assert 'id="x-plus-30-cross"' in svg
+    assert 'id="y-plus-30-cross"' in svg
+    assert "X+30 mm" in svg
+    assert "Y+30 mm" in svg
     assert svg.count("data:image/png;base64,") == 6
     assert output.read_text(encoding="utf-8") == svg
 
