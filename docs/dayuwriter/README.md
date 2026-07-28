@@ -27,6 +27,7 @@
 5. [05-日常操作与故障排查](05-operation-troubleshooting.md)
 6. [06-D435i 视觉改造路线](06-d435i-vision-roadmap.md)
 7. [07-新电脑部署与现场迁移](07-new-laptop-migration.md)
+8. [14-全新电脑运行可视化界面](14-new-pc-live-monitor.md)
 
 ## 原始证据
 
