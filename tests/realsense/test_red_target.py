@@ -39,6 +39,20 @@ def red_ellipse_frame(
     return image
 
 
+def dim_projected_red_ellipse_frame(
+    *, center_uv: tuple[int, int] = (50, 40), radius_u_px: int = 6, radius_v_px: int = 2
+) -> np.ndarray:
+    image = np.zeros((80, 100, 3), dtype=np.uint8)
+    vertical, horizontal = np.ogrid[: image.shape[0], : image.shape[1]]
+    mask = (
+        ((horizontal - center_uv[0]) / radius_u_px) ** 2
+        + ((vertical - center_uv[1]) / radius_v_px) ** 2
+        <= 1.0
+    )
+    image[mask] = (140, 70, 80)
+    return image
+
+
 def test_finds_a_saturated_red_circular_target() -> None:
     target = find_red_target(red_circle_frame())
 
@@ -53,6 +67,14 @@ def test_finds_a_red_circle_seen_as_a_thin_perspective_ellipse() -> None:
     assert target is not None
     assert target.center_uv == pytest.approx((50.0, 40.0), abs=0.2)
     assert target.area_px >= 40
+
+
+def test_finds_a_dim_small_red_target_seen_at_an_oblique_angle() -> None:
+    target = find_red_target(dim_projected_red_ellipse_frame())
+
+    assert target is not None
+    assert target.center_uv == pytest.approx((50.0, 40.0), abs=0.2)
+    assert target.area_px >= 20
 
 
 def test_ignores_an_elongated_red_region() -> None:

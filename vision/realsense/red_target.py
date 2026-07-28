@@ -19,10 +19,10 @@ class RedTargetError(ValueError):
 
 @dataclass(frozen=True)
 class RedTargetConfig:
-    min_red: int = 150
-    min_red_advantage: int = 80
-    min_area_px: int = 40
-    min_fill_ratio: float = 0.55
+    min_red: int = 130
+    min_red_advantage: int = 60
+    min_area_px: int = 20
+    min_fill_ratio: float = 0.40
     max_aspect_ratio: float = 4.0
 
 

@@ -37,6 +37,17 @@
         "x": 60.0,
         "y": 60.0
       }
+    },
+    {
+      "id": "x0_y60",
+      "pixel_uv": {
+        "u": 381.25,
+        "v": 239.8333333333334
+      },
+      "machine_xy_mm": {
+        "x": 0.0,
+        "y": 60.0
+      }
     }
   ],
   "validation_points": [],
@@ -56,8 +67,14 @@
       "valid_depth_samples": 12,
       "invalid_depth_samples": 0,
       "depth_m_range_for_valid_samples": [0.4390000104904175, 0.445000022649765]
+    },
+    "x0_y60": {
+      "red_target_pixel_samples": 12,
+      "valid_depth_samples": 10,
+      "invalid_depth_samples": 2,
+      "depth_m_range_for_valid_samples": [0.4750000238418579, 0.4770000278949738]
     }
   },
   "motion_permission": "display_only",
-  "status": "incomplete: collect x0_y60, then held-out x30_y30 before fitting"
+  "status": "four fit points captured: collect held-out x30_y30 before accepting the display-only mapping"
 }
