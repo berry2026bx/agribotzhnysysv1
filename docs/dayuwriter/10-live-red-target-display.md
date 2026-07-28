@@ -40,12 +40,28 @@ python -m vision.realsense.live_red_target_dashboard `
 启动后浏览器打开：<http://127.0.0.1:8765/>。
 程序持续运行时不要移动相机、纸张或 P0 标记；结束时在该终端按 `Ctrl+C`。
 
+相机位置发生过变化、而新的四点纸面标定尚未完成时，改用以下命令：
+
+```powershell
+conda activate dayuwriter-control
+python -m vision.realsense.live_red_target_dashboard `
+  --serial 231122070403 `
+  --camera-xyz-only `
+  --port 8765
+```
+
+该模式应显示 `state: ready` 和 `mapping_state: unavailable`，以及像素、
+深度和相机 XYZ；它刻意不显示 `machine_xy_mm`，以免旧姿态标定被误用。
+完成新姿态的四点拟合和保留点验证后，去掉 `--camera-xyz-only`，并传入新的
+标定结果文件，才可以显示新的 P0 平面 XY。
+
 ## 页面字段
 
 - `target.center_uv`: 红色圆形质心的 RGB 像素坐标 `(u, v)`。
 - `depth_m`: 在目标中心附近取得的有效、对齐深度，单位米。
 - `camera_xyz_m`: D435i 相机坐标，单位米；`+X` 向右、`+Y` 向下、`+Z` 从相机向前。
 - `machine_xy_mm`: 用本相机姿态的纸面标定矩阵预测的 DayuWriter P0 XY，单位毫米。
+- `mapping_state: unavailable`: 当前只显示相机坐标，尚无可用的本姿态 P0 平面映射。
 - `depth_sample_uv`: 实际读取深度的像素。若圆心是深度空洞，它可与圆心相邻。
 
 状态含义：

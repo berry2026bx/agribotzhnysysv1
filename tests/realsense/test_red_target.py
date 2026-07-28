@@ -94,6 +94,29 @@ def test_observation_reports_camera_xyz_and_display_only_machine_xy() -> None:
     assert math.isfinite(observation.machine_xy_mm[0])
 
 
+def test_observation_reports_camera_xyz_without_a_machine_mapping() -> None:
+    target = find_red_target(red_circle_frame())
+    assert target is not None
+
+    observation = observe_target(
+        target,
+        depth_frame=SparseDepthFrame(),
+        color_intrinsics=object(),
+        deproject=lambda intrinsics, pixel, depth: [0.1, 0.2, depth],
+        pixel_to_machine=None,
+        width=100,
+        height=80,
+        depth_sample_radius=1,
+    )
+
+    state = snapshot_state(target, observation, error=None)
+
+    assert observation.machine_xy_mm is None
+    assert state["state"] == "ready"
+    assert state["mapping_state"] == "unavailable"
+    assert "machine_xy_mm" not in state
+
+
 def test_rejects_a_non_rgb_frame() -> None:
     with pytest.raises(ValueError, match="RGB"):
         find_red_target(np.zeros((40, 40), dtype=np.uint8), RedTargetConfig())
@@ -136,3 +159,9 @@ def test_dashboard_default_min_area_matches_red_target_config() -> None:
     args = build_parser().parse_args(["--serial", "231122070403"])
 
     assert args.min_area_px == RedTargetConfig().min_area_px
+
+
+def test_dashboard_parses_camera_xyz_only_mode() -> None:
+    args = build_parser().parse_args(["--serial", "231122070403", "--camera-xyz-only"])
+
+    assert args.camera_xyz_only is True

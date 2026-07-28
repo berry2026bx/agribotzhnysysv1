@@ -40,7 +40,7 @@ class TargetObservation:
     depth_sample_uv: tuple[int, int]
     depth_m: float
     camera_xyz_m: tuple[float, float, float]
-    machine_xy_mm: tuple[float, float]
+    machine_xy_mm: tuple[float, float] | None
 
 
 def find_red_target(
@@ -74,12 +74,12 @@ def observe_target(
     depth_frame: Any,
     color_intrinsics: Any,
     deproject: Callable[[Any, list[int], float], Sequence[float]],
-    pixel_to_machine: np.ndarray,
+    pixel_to_machine: np.ndarray | None,
     width: int,
     height: int,
     depth_sample_radius: int = 5,
 ) -> TargetObservation:
-    """Build a metric camera and display-only machine-plane observation."""
+    """Build a metric camera observation, with an optional machine-plane prediction."""
     if not isinstance(target, RedTarget):
         raise RedTargetError("target must be a RedTarget")
     if width <= 0 or height <= 0:
@@ -108,10 +108,12 @@ def observe_target(
     if len(camera_point) != 3 or not all(math.isfinite(value) for value in camera_point):
         raise RedTargetError(f"invalid camera coordinate: {camera_point!r}")
 
-    try:
-        machine_xy = predict_machine_xy(pixel_to_machine, target.center_uv)
-    except PlaneMappingError as exc:
-        raise RedTargetError(f"invalid planar mapping: {exc}") from exc
+    machine_xy: tuple[float, float] | None = None
+    if pixel_to_machine is not None:
+        try:
+            machine_xy = predict_machine_xy(pixel_to_machine, target.center_uv)
+        except PlaneMappingError as exc:
+            raise RedTargetError(f"invalid planar mapping: {exc}") from exc
     return TargetObservation(
         target_center_uv=target.center_uv,
         depth_sample_uv=(sample_u, sample_v),

@@ -37,7 +37,7 @@ class DashboardError(RuntimeError):
 @dataclass(frozen=True)
 class Calibration:
     serial: str
-    pixel_to_machine: np.ndarray
+    pixel_to_machine: np.ndarray | None
 
 
 @dataclass(frozen=True)
@@ -136,6 +136,7 @@ def snapshot_state(
     state.update(
         {
             "state": "ready",
+            "mapping_state": "available" if observation.machine_xy_mm is not None else "unavailable",
             "depth_m": observation.depth_m,
             "depth_sample_uv": {
                 "u": observation.depth_sample_uv[0],
@@ -146,12 +147,13 @@ def snapshot_state(
                 "y": observation.camera_xyz_m[1],
                 "z": observation.camera_xyz_m[2],
             },
-            "machine_xy_mm": {
-                "x": observation.machine_xy_mm[0],
-                "y": observation.machine_xy_mm[1],
-            },
         }
     )
+    if observation.machine_xy_mm is not None:
+        state["machine_xy_mm"] = {
+            "x": observation.machine_xy_mm[0],
+            "y": observation.machine_xy_mm[1],
+        }
     return state
 
 
@@ -256,6 +258,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=Path("docs/dayuwriter/calibration/camera-a-current-pose-result.json"),
         help="Display-only pixel-to-machine calibration artifact",
     )
+    parser.add_argument(
+        "--camera-xyz-only",
+        action="store_true",
+        help="Show pixel/depth/camera XYZ without any machine-plane prediction",
+    )
     parser.add_argument("--port", type=int, default=8765, help="Loopback HTTP port")
     parser.add_argument(
         "--min-area-px",
@@ -275,7 +282,11 @@ def main() -> int:
             raise DashboardError("--port must be between 1 and 65535")
         if args.warmup_frames < 0 or args.depth_sample_radius < 0:
             raise DashboardError("warmup and depth radius must be non-negative")
-        calibration = load_calibration(args.calibration, args.serial)
+        calibration = (
+            Calibration(serial=args.serial, pixel_to_machine=None)
+            if args.camera_xyz_only
+            else load_calibration(args.calibration, args.serial)
+        )
         target_config = RedTargetConfig(min_area_px=args.min_area_px)
         store = SnapshotStore()
         stop_event = threading.Event()
