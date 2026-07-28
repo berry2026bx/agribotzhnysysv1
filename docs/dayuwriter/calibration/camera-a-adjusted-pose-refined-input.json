@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "captured_at_utc": "2026-07-28T06:53:08Z",
+  "camera": {
+    "serial": "231122070403"
+  },
+  "fit_points": [
+    {
+      "id": "p0",
+      "pixel_uv": {"u": 308.8478260869565, "v": 259.5416666666667},
+      "machine_xy_mm": {"x": 0.0, "y": 0.0}
+    },
+    {
+      "id": "x60_y0",
+      "pixel_uv": {"u": 363.6136363636364, "v": 279.7045454545454},
+      "machine_xy_mm": {"x": 60.0, "y": 0.0}
+    },
+    {
+      "id": "x60_y60",
+      "pixel_uv": {"u": 436.6290322580645, "v": 257.7741935483871},
+      "machine_xy_mm": {"x": 60.0, "y": 60.0}
+    },
+    {
+      "id": "x0_y60",
+      "pixel_uv": {"u": 381.25, "v": 239.8333333333334},
+      "machine_xy_mm": {"x": 0.0, "y": 60.0}
+    },
+    {
+      "id": "x30_y0",
+      "pixel_uv": {"u": 355.232832278481, "v": 269.363193768257},
+      "machine_xy_mm": {"x": 30.0, "y": 0.0}
+    }
+  ],
+  "validation_points": [
+    {
+      "id": "x30_y30_held_out",
+      "pixel_uv": {"u": 379.7887323943662, "v": 259.0},
+      "machine_xy_mm": {"x": 30.0, "y": 30.0}
+    }
+  ],
+  "motion_permission": "display_only",
+  "capture_quality": {
+    "x30_y0": {
+      "red_target_pixel_samples": 12,
+      "valid_depth_samples": 12,
+      "invalid_depth_samples": 0,
+      "depth_m_range_for_valid_samples": [0.4280000329017639, 0.4320000112056732]
+    }
+  },
+  "status": "five-point least-squares refinement with a re-placed x30_y0 marker; x30_y30 remains held out"
+}

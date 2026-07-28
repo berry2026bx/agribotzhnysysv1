@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "captured_at_utc": "2026-07-28T06:53:43+00:00",
+  "camera": {
+    "serial": "231122070403"
+  },
+  "fit_points": [
+    {
+      "id": "p0",
+      "pixel_uv": {
+        "u": 308.8478260869565,
+        "v": 259.5416666666667
+      },
+      "machine_xy_mm": {
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    {
+      "id": "x60_y0",
+      "pixel_uv": {
+        "u": 363.6136363636364,
+        "v": 279.7045454545454
+      },
+      "machine_xy_mm": {
+        "x": 60.0,
+        "y": 0.0
+      }
+    },
+    {
+      "id": "x60_y60",
+      "pixel_uv": {
+        "u": 436.6290322580645,
+        "v": 257.7741935483871
+      },
+      "machine_xy_mm": {
+        "x": 60.0,
+        "y": 60.0
+      }
+    },
+    {
+      "id": "x0_y60",
+      "pixel_uv": {
+        "u": 381.25,
+        "v": 239.8333333333334
+      },
+      "machine_xy_mm": {
+        "x": 0.0,
+        "y": 60.0
+      }
+    },
+    {
+      "id": "x30_y0",
+      "pixel_uv": {
+        "u": 355.232832278481,
+        "v": 269.363193768257
+      },
+      "machine_xy_mm": {
+        "x": 30.0,
+        "y": 0.0
+      }
+    }
+  ],
+  "matrix_pixel_to_machine": [
+    [
+      0.035138304773376226,
+      0.09993712592541645,
+      -37.027300464464325
+    ],
+    [
+      0.03199125986434659,
+      -0.2156802049449622,
+      47.22182015408814
+    ],
+    [
+      -0.0005530568405889003,
+      -0.002660523913083593,
+      1.0
+    ]
+  ],
+  "validation": {
+    "count": 1,
+    "mean_error_mm": 9.481076943901492,
+    "max_error_mm": 9.481076943901492,
+    "points": [
+      {
+        "id": "x30_y30_held_out",
+        "pixel_uv": {
+          "u": 379.7887323943662,
+          "v": 259.0
+        },
+        "expected_machine_xy_mm": {
+          "x": 30.0,
+          "y": 30.0
+        },
+        "predicted_machine_xy_mm": {
+          "x": 21.823524954217216,
+          "y": 34.79959121612163
+        },
+        "error_mm": 9.481076943901492
+      }
+    ]
+  },
+  "motion_permission": "display_only",
+  "limitations": [
+    "The artifact is valid only for this camera serial and unchanged mount pose.",
+    "This artifact does not authorize GRBL motion."
+  ]
+}
