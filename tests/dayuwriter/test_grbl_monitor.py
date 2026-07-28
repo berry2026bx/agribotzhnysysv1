@@ -14,6 +14,7 @@ from communication.dayuwriter.grbl_monitor import (
     format_frame_fields,
     parse_status_fields,
     protocol_guide,
+    signal_path_nodes,
     validate_monitor_motion,
 )
 
@@ -121,6 +122,28 @@ def test_protocol_guide_covers_serial_grbl_and_status_line_basics() -> None:
     assert "--port COM4" in comx.detail
     ch340 = next(entry for entry in entries if entry.term == "CH340")
     assert "不负责解析 G-code" in ch340.detail
+
+
+def test_signal_path_separates_software_transport_motion_and_return_evidence() -> None:
+    nodes = signal_path_nodes()
+    keys = [node.key for node in nodes]
+    assert keys == [
+        "python",
+        "pyserial",
+        "windows_com",
+        "ch340",
+        "grbl",
+        "step_dir",
+        "a4988",
+        "mechanics",
+        "return",
+    ]
+    assert "write(bytes)" in nodes[1].payload
+    assert "115200" in nodes[2].payload
+    assert "USB" in nodes[3].detail
+    assert "G-code" in nodes[4].detail
+    assert "脉冲" in nodes[5].detail
+    assert "<Idle|MPos" in nodes[-1].payload
 
 
 def test_stream_row_keeps_live_log_compact_and_explanation_separate() -> None:

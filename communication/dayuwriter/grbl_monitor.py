@@ -439,6 +439,100 @@ class ChainStage:
     detail: str
 
 
+@dataclass(frozen=True)
+class SignalPathNode:
+    """One visible station in the command, electrical, and return path."""
+
+    key: str
+    title: str
+    subtitle: str
+    detail: str
+    payload: str
+    tone: str
+
+
+SIGNAL_PATH_NODES = (
+    SignalPathNode(
+        "python",
+        "Python 控制器",
+        "软件决策层",
+        "检查已知边界，生成一次受限 Jog 请求。",
+        "controller.jog(...)",
+        "software",
+    ),
+    SignalPathNode(
+        "pyserial",
+        "pySerial",
+        "串口软件接口",
+        "把 Unicode 指令编码成 bytes，写入 Windows 串口。",
+        "write(bytes)",
+        "software",
+    ),
+    SignalPathNode(
+        "windows_com",
+        "Windows COMx",
+        "操作系统设备端点",
+        "例如 COM4：程序找到 USB 串口设备的入口。",
+        "115200 · 8-N-1",
+        "transport",
+    ),
+    SignalPathNode(
+        "ch340",
+        "CH340",
+        "USB-UART 桥",
+        "把 USB 传输转换为 Arduino UART 串行电平。",
+        "USB bytes ↔ UART",
+        "transport",
+    ),
+    SignalPathNode(
+        "grbl",
+        "Arduino + GRBL",
+        "固件与运动规划",
+        "解析 G-code/Jog，规划速度，并维护 MPos 与状态。",
+        "$J=G91 G21 X5 F100",
+        "firmware",
+    ),
+    SignalPathNode(
+        "step_dir",
+        "STEP / DIR",
+        "数字脉冲信号",
+        "STEP 脉冲计步；DIR 电平决定正反方向。",
+        "pulse + direction",
+        "pulse",
+    ),
+    SignalPathNode(
+        "a4988",
+        "A4988",
+        "功率驱动层",
+        "按 STEP/DIR 给电机绕组提供受控电流与细分。",
+        "coil current",
+        "motion",
+    ),
+    SignalPathNode(
+        "mechanics",
+        "电机与滑台",
+        "机械执行层",
+        "电机转动，经同步带、导轨或丝杆形成 X/Y/Z 位移。",
+        "physical motion",
+        "motion",
+    ),
+    SignalPathNode(
+        "return",
+        "RX 状态证据",
+        "返回路径",
+        "GRBL 把状态帧经 UART、CH340、COMx 回传给 Python。",
+        "<Idle|MPos:...>",
+        "return",
+    ),
+)
+
+
+def signal_path_nodes() -> tuple[SignalPathNode, ...]:
+    """Expose the fixed teaching model without fabricating serial events."""
+
+    return SIGNAL_PATH_NODES
+
+
 CHAIN_STAGES = (
     ChainStage("python", "Python 调用", "持久控制器接到动作请求"),
     ChainStage("command", "TX 运动指令", "ASCII 写入当前串口"),
@@ -575,19 +669,21 @@ class ScrollableContent(tk.Frame):
 class ProtocolMonitorApp:
     """A calm three-page desktop classroom for real GRBL events."""
 
-    BG = "#f5f6f8"
-    SURFACE = "#ffffff"
-    SURFACE_ALT = "#f8fafc"
-    BORDER = "#d9dee7"
-    TEXT = "#1f2937"
-    MUTED = "#667085"
-    NAVY = "#1f2937"
-    TEAL = "#047857"
-    BLUE = "#2563eb"
-    PURPLE = "#7c3aed"
-    GREEN = "#15803d"
-    AMBER = "#d97706"
-    RED = "#b42318"
+    BG = "#eaf0f1"
+    SURFACE = "#fdfefe"
+    SURFACE_ALT = "#f3f7f7"
+    BORDER = "#c7d3d5"
+    TEXT = "#1d3036"
+    MUTED = "#5f7378"
+    NAVY = "#21343b"
+    TEAL = "#007d77"
+    BLUE = "#2769a8"
+    PURPLE = "#7555a2"
+    GREEN = "#258255"
+    AMBER = "#b97917"
+    RED = "#b94842"
+    CYAN = "#147f98"
+    CORAL = "#bd5d3d"
 
     def __init__(self, root: tk.Tk, port: str) -> None:
         self._root = root
@@ -708,13 +804,13 @@ class ProtocolMonitorApp:
         band = tk.Frame(parent, bg=self.SURFACE, highlightbackground=self.BORDER, highlightthickness=1)
         band.grid(row=0, column=0, columnspan=3, sticky="ew", pady=(0, 14))
         band.columnconfigure(0, weight=1)
-        tk.Label(band, text="通信因果链", bg=self.SURFACE, fg=self.NAVY, font=("Microsoft YaHei UI", 12, "bold"), anchor="w").grid(row=0, column=0, sticky="w", padx=18, pady=(12, 0))
-        tk.Label(band, text="COMx 是 Windows 设备地址  ·  CH340 是 USB-UART 桥  ·  GRBL 是 Arduino 内的运动固件  ·  TX/RX 是数据方向", bg=self.SURFACE, fg=self.MUTED, font=("Microsoft YaHei UI", 9), anchor="w").grid(row=1, column=0, sticky="w", padx=18, pady=(0, 4))
-        self._chain_canvas = tk.Canvas(band, height=72, bg=self.SURFACE, bd=0, highlightthickness=0)
+        tk.Label(band, text="从一条 Python 指令到滑台位移：真实信号路径", bg=self.SURFACE, fg=self.NAVY, font=("Microsoft YaHei UI", 15, "bold"), anchor="w").grid(row=0, column=0, sticky="w", padx=20, pady=(16, 0))
+        tk.Label(band, text="通信协议不是‘一根线’：它同时约定数据内容、字节结束方式、传输速度、电气接口、状态含义与应答顺序。", bg=self.SURFACE, fg=self.MUTED, font=("Microsoft YaHei UI", 10), anchor="w").grid(row=1, column=0, sticky="w", padx=20, pady=(2, 8))
+        self._chain_canvas = tk.Canvas(band, height=420, bg=self.SURFACE, bd=0, highlightthickness=0)
         self._chain_canvas.grid(row=2, column=0, sticky="ew", padx=12)
         self._chain_canvas.bind("<Configure>", lambda _event: self._draw_causal_chain())
-        tk.Label(band, text="物理执行链：GRBL → STEP/DIR 脉冲 → A4988 → 步进电机 → 同步带/导轨/丝杆 → 滑台。反馈链：GRBL → RX 状态帧 → Python → 本页面。", bg=self.SURFACE, fg=self.TEXT, font=("Microsoft YaHei UI", 9), anchor="w", justify="left", wraplength=1400).grid(row=3, column=0, sticky="ew", padx=18, pady=(1, 2))
-        tk.Label(band, textvariable=self._chain_summary, bg=self.SURFACE, fg=self.TEXT, font=("Microsoft YaHei UI", 9), anchor="w", justify="left", wraplength=1400).grid(row=4, column=0, sticky="ew", padx=18, pady=(1, 10))
+        tk.Label(band, text="协议数据：ASCII G-code/Jog + LF（指令结束）  |  链路设置：115200 baud · 8-N-1  |  实时查询：?（单个字节，无换行）", bg=self.SURFACE_ALT, fg=self.TEXT, font=("Consolas", 9), anchor="w", justify="left", wraplength=1400).grid(row=3, column=0, sticky="ew", padx=20, pady=(4, 3))
+        tk.Label(band, textvariable=self._chain_summary, bg=self.SURFACE, fg=self.TEXT, font=("Microsoft YaHei UI", 9), anchor="w", justify="left", wraplength=1400).grid(row=4, column=0, sticky="ew", padx=20, pady=(2, 14))
         self._draw_causal_chain()
 
     def _build_controls(self, parent: tk.Frame, row: int) -> None:
@@ -909,25 +1005,94 @@ class ProtocolMonitorApp:
         if canvas is None:
             return
         canvas.delete("all")
-        width = max(canvas.winfo_width(), 1120)
-        stages = CHAIN_STAGES
-        gap = 12
-        margin = 12
-        node_width = (width - margin * 2 - gap * (len(stages) - 1)) / len(stages)
-        top, bottom = 7, 63
-        for index, stage in enumerate(stages):
-            left = margin + index * (node_width + gap)
-            right = left + node_width
-            active = stage.key == self._active_chain_stage
-            fill = self.NAVY if active else "#ffffff"
-            outline = self.NAVY if active else self.BORDER
-            title_color = "#ffffff" if active else self.TEXT
-            detail_color = "#e7f5f3" if active else self.MUTED
+        width = max(canvas.winfo_width(), 1240)
+        node_width = min(236, (width - 56) / 5 - 14)
+        gap = (width - 40 - node_width * 5) / 4
+        top_y, top_height = 67, 104
+        nodes = signal_path_nodes()
+        tone_color = {
+            "software": self.BLUE,
+            "transport": self.CYAN,
+            "firmware": self.TEAL,
+            "pulse": self.AMBER,
+            "motion": self.CORAL,
+            "return": self.PURPLE,
+        }
+        stage_to_node = {
+            "python": "python",
+            "command": "pyserial",
+            "accepted": "grbl",
+            "poll": "pyserial",
+            "running": "grbl",
+            "complete": "return",
+        }
+        active_key = stage_to_node.get(self._active_chain_stage or "")
+
+        canvas.create_text(22, 20, text="01  命令数据从电脑进入控制板", fill=self.BLUE, anchor="w", font=("Consolas", 10, "bold"))
+        canvas.create_text(22, 40, text="每个方框都标出：谁在工作、它拿到或输出什么、它不负责什么。", fill=self.MUTED, anchor="w", font=("Microsoft YaHei UI", 9))
+
+        def draw_node(node: SignalPathNode, left: float, top: float, card_width: float, card_height: float) -> tuple[float, float]:
+            color = tone_color[node.tone]
+            active = node.key == active_key
+            fill = color if active else self.SURFACE_ALT
+            outline = color
+            main = "#ffffff" if active else self.TEXT
+            minor = "#eaf7f6" if active else self.MUTED
+            canvas.create_rectangle(left, top, left + card_width, top + card_height, fill=fill, outline=outline, width=2 if active else 1)
+            canvas.create_rectangle(left, top, left + 7, top + card_height, fill=color, outline=color)
+            canvas.create_text(left + 18, top + 17, text=node.title, fill=main, anchor="w", font=("Microsoft YaHei UI", 11, "bold"))
+            canvas.create_text(left + 18, top + 37, text=node.subtitle, fill=minor, anchor="w", font=("Microsoft YaHei UI", 8, "bold"))
+            canvas.create_text(left + 18, top + 61, text=node.detail, fill=main, anchor="w", font=("Microsoft YaHei UI", 8), width=card_width - 34)
+            canvas.create_rectangle(left + 14, top + card_height - 25, left + card_width - 13, top + card_height - 7, fill="#ffffff" if active else "#e8eef0", outline="")
+            canvas.create_text(left + 20, top + card_height - 16, text=node.payload, fill=color if not active else self.NAVY, anchor="w", font=("Consolas", 8, "bold"), width=card_width - 42)
+            return left + card_width / 2, top + card_height / 2
+
+        top_centers: list[tuple[float, float]] = []
+        for index, node in enumerate(nodes[:5]):
+            left = 20 + index * (node_width + gap)
+            center = draw_node(node, left, top_y, node_width, top_height)
+            top_centers.append(center)
             if index:
-                canvas.create_line(left - gap + 2, 35, left - 3, 35, fill=self.TEAL if active else self.BORDER, width=2, arrow="last")
-            canvas.create_rectangle(left, top, right, bottom, fill=fill, outline=outline, width=2 if active else 1)
-            canvas.create_text((left + right) / 2, 24, text=stage.title, fill=title_color, font=("Microsoft YaHei UI", 10, "bold"))
-            canvas.create_text((left + right) / 2, 46, text=stage.detail, fill=detail_color, font=("Microsoft YaHei UI", 8), width=max(node_width - 12, 70))
+                previous_x, previous_y = top_centers[index - 1]
+                canvas.create_line(previous_x + node_width / 2 - 3, previous_y, center[0] - node_width / 2 + 3, center[1], fill=self.BLUE, width=3, arrow="last")
+
+        canvas.create_text(22, 196, text="02  GRBL 把文本协议转换成可驱动机械的数字脉冲", fill=self.AMBER, anchor="w", font=("Consolas", 10, "bold"))
+        canvas.create_text(22, 216, text="此处不再传输 G-code 文本：STEP 是计步脉冲，DIR 是方向电平；线路从右向左继续。", fill=self.MUTED, anchor="w", font=("Microsoft YaHei UI", 9))
+        actuation_width = min(270, node_width + 24)
+        actuation_gap = 20
+        actuation_y, actuation_height = 238, 98
+        grbl_x, _grbl_y = top_centers[-1]
+        step_left = min(max(20 + actuation_width * 2 + actuation_gap * 2, grbl_x - actuation_width / 2), width - 20 - actuation_width)
+        a4988_left = step_left - actuation_width - actuation_gap
+        mechanics_left = a4988_left - actuation_width - actuation_gap
+        actuation_layout = (
+            (nodes[7], mechanics_left),
+            (nodes[6], a4988_left),
+            (nodes[5], step_left),
+        )
+        actuation_centers = {node.key: draw_node(node, left, actuation_y, actuation_width, actuation_height) for node, left in actuation_layout}
+        step_x, step_y = actuation_centers["step_dir"]
+        a4988_x, a4988_y = actuation_centers["a4988"]
+        mechanics_x, mechanics_y = actuation_centers["mechanics"]
+        canvas.create_line(step_x - actuation_width / 2 - 3, step_y, a4988_x + actuation_width / 2 + 3, a4988_y, fill=self.CORAL, width=3, arrow="last")
+        canvas.create_line(a4988_x - actuation_width / 2 - 3, a4988_y, mechanics_x + actuation_width / 2 + 3, mechanics_y, fill=self.CORAL, width=3, arrow="last")
+        canvas.create_line(grbl_x, top_y + top_height + 4, step_x, step_y - actuation_height / 2 - 4, fill=self.AMBER, width=3, arrow="last")
+        canvas.create_text(grbl_x + 10, top_y + top_height + 23, text="文本 → 脉冲", fill=self.AMBER, anchor="w", font=("Microsoft YaHei UI", 8, "bold"))
+
+        return_node = nodes[-1]
+        return_top, return_height = 354, 50
+        return_width = min(740, width - 300)
+        return_left = 80
+        return_color = tone_color[return_node.tone]
+        return_active = active_key == "return"
+        canvas.create_rectangle(return_left, return_top, return_left + return_width, return_top + return_height, fill=return_color if return_active else "#f2eef8", outline=return_color, width=2 if return_active else 1)
+        canvas.create_text(return_left + 16, return_top + 16, text="03  返回证据 / RX", fill="#ffffff" if return_active else self.PURPLE, anchor="w", font=("Microsoft YaHei UI", 10, "bold"))
+        canvas.create_text(return_left + 16, return_top + 34, text="GRBL → Arduino UART → CH340 → USB → Windows COMx → pySerial.readline() → 实时界面", fill="#ffffff" if return_active else self.TEXT, anchor="w", font=("Microsoft YaHei UI", 8), width=return_width - 150)
+        canvas.create_text(return_left + return_width - 14, return_top + 25, text=return_node.payload, fill="#ffffff" if return_active else return_color, anchor="e", font=("Consolas", 8, "bold"))
+        grbl_right = grbl_x + node_width / 2
+        return_bus_x = width - 24
+        canvas.create_line(grbl_right + 4, top_y + top_height / 2, return_bus_x, top_y + top_height / 2, return_bus_x, return_top + return_height / 2, return_left + return_width + 4, return_top + return_height / 2, fill=return_color, width=2, arrow="last")
+        canvas.create_text(return_bus_x - 8, return_top - 9, text="状态回传走 UART/USB，不经过 A4988", fill=self.PURPLE, anchor="e", font=("Microsoft YaHei UI", 8))
 
     def _draw_coordinate_history(self) -> None:
         canvas = getattr(self, "_trajectory_canvas", None)
