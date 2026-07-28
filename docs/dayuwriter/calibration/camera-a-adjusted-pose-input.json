@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "captured_at_utc": "2026-07-28T04:28:00Z",
+  "camera": {
+    "serial": "231122070403"
+  },
+  "fit_points": [
+    {
+      "id": "p0",
+      "pixel_uv": {
+        "u": 308.8478260869565,
+        "v": 259.5416666666667
+      },
+      "machine_xy_mm": {
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    {
+      "id": "x60_y0",
+      "pixel_uv": {
+        "u": 363.6136363636364,
+        "v": 279.7045454545454
+      },
+      "machine_xy_mm": {
+        "x": 60.0,
+        "y": 0.0
+      }
+    }
+  ],
+  "validation_points": [],
+  "capture_quality": {
+    "p0": {
+      "red_target_pixel_samples": 10,
+      "depth_m_range": [0.445000022649765, 0.44600000977516174]
+    },
+    "x60_y0": {
+      "red_target_pixel_samples": 12,
+      "valid_depth_samples": 6,
+      "invalid_depth_samples": 6,
+      "depth_m_range_for_valid_samples": [0.4620000123977661, 0.4640000164508819]
+    }
+  },
+  "motion_permission": "display_only",
+  "status": "incomplete: collect x60_y60, x0_y60, then held-out x30_y30 before fitting"
+}
