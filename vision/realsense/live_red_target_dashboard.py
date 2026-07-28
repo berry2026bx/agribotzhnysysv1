@@ -7,7 +7,9 @@ import json
 import math
 import struct
 import threading
+from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -15,6 +17,13 @@ from urllib.parse import urlparse
 
 import numpy as np
 
+from .aruco_plane_calibration import (
+    REQUIRED_COMPLETE_FRAMES,
+    SessionCalibrationError,
+    build_aruco_session_record,
+    detect_marker_corners,
+)
+from .aruco_reference_board import ArucoBoardLayout, BoardRegistrationError, default_layout, load_registration
 from .red_target import (
     RedTarget,
     RedTargetConfig,
@@ -38,6 +47,85 @@ class DashboardError(RuntimeError):
 class Calibration:
     serial: str
     pixel_to_machine: np.ndarray | None
+
+
+@dataclass(frozen=True)
+class ReferenceStatus:
+    """Current display-only validity of the fixed A4 reference board."""
+
+    state: str
+    detail: str | None
+    marker_corners_uv: dict[int, tuple[tuple[float, float], ...]]
+    matrix_pixel_to_machine: np.ndarray | None
+    validation: dict[str, Any] | None
+
+
+class ArucoReferenceTracker:
+    """Build a safe display mapping only from a registered, visible reference board."""
+
+    def __init__(
+        self,
+        *,
+        layout: ArucoBoardLayout,
+        registration: dict[str, object] | None,
+        serial: str = "231122070403",
+        registration_detail: str | None = None,
+    ) -> None:
+        self.layout = layout
+        self._registration = registration
+        self._serial = serial
+        self._registration_detail = registration_detail
+        self._complete_frames: list[dict[int, np.ndarray]] = []
+
+    def update(self, corners_uv: Mapping[int, np.ndarray]) -> ReferenceStatus:
+        """Return a new mapping status and never retain a stale matrix after failure."""
+        marker_corners = _serializable_marker_corners(corners_uv)
+        if self._registration is None:
+            return ReferenceStatus(
+                "registration_required",
+                self._registration_detail or "reference board registration is required",
+                marker_corners,
+                None,
+                None,
+            )
+        try:
+            normalized = _complete_reference_frame(corners_uv, self.layout)
+        except SessionCalibrationError as exc:
+            self._complete_frames.clear()
+            return ReferenceStatus("reference_lost", str(exc), marker_corners, None, None)
+
+        if len(self._complete_frames) < REQUIRED_COMPLETE_FRAMES:
+            self._complete_frames.append(normalized)
+            if len(self._complete_frames) < REQUIRED_COMPLETE_FRAMES:
+                return ReferenceStatus(
+                    "collecting_reference_frames",
+                    f"{len(self._complete_frames)}/{REQUIRED_COMPLETE_FRAMES} complete frames",
+                    marker_corners,
+                    None,
+                    None,
+                )
+            complete_frames = self._complete_frames
+        else:
+            complete_frames = [normalized.copy() for _ in range(REQUIRED_COMPLETE_FRAMES)]
+
+        try:
+            result = build_aruco_session_record(
+                serial=self._serial,
+                frame_size=(COLOR_WIDTH, COLOR_HEIGHT),
+                layout=self.layout,
+                complete_frames=complete_frames,
+                captured_at_utc=datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+            )
+        except SessionCalibrationError as exc:
+            self._complete_frames.clear()
+            return ReferenceStatus("calibration_rejected", str(exc), marker_corners, None, None)
+        return ReferenceStatus(
+            "ready",
+            None,
+            marker_corners,
+            result.matrix_pixel_to_machine,
+            result.record["validation"],
+        )
 
 
 @dataclass(frozen=True)
@@ -108,12 +196,22 @@ def snapshot_state(
     observation: TargetObservation | None,
     *,
     error: str | None,
+    reference: ReferenceStatus | None = None,
 ) -> dict[str, Any]:
     """Serialize the current display-only camera result for the browser."""
     state: dict[str, Any] = {
         "motion_permission": "display_only",
         "error": error,
     }
+    if reference is not None:
+        state.update(
+            reference_snapshot_state(
+                state=reference.state,
+                detail=reference.detail,
+                marker_corners=reference.marker_corners_uv,
+                validation=reference.validation,
+            )
+        )
     if target is None:
         state["state"] = "no_target" if error is None else "camera_error"
         return state
@@ -157,6 +255,65 @@ def snapshot_state(
     return state
 
 
+def reference_snapshot_state(
+    *,
+    state: str,
+    detail: str | None,
+    marker_corners: Mapping[int, tuple[tuple[float, float], ...]],
+    validation: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Serialize reference validity without granting any motion capability."""
+    return {
+        "motion_permission": "display_only",
+        "reference": {
+            "state": state,
+            "detail": detail,
+            "visible_marker_ids": sorted(marker_corners),
+            "marker_corners_uv": {
+                str(marker_id): [
+                    {"u": float(corner[0]), "v": float(corner[1])}
+                    for corner in corners
+                ]
+                for marker_id, corners in sorted(marker_corners.items())
+            },
+            "validation": validation,
+        },
+    }
+
+
+def _complete_reference_frame(
+    corners_uv: Mapping[int, np.ndarray], layout: ArucoBoardLayout
+) -> dict[int, np.ndarray]:
+    expected_ids = {marker.identifier for marker in layout.markers}
+    missing = sorted(expected_ids - set(corners_uv))
+    if missing:
+        raise SessionCalibrationError(f"required reference marker ids are missing: {missing}")
+    frame: dict[int, np.ndarray] = {}
+    for marker_id in sorted(expected_ids):
+        corners = np.asarray(corners_uv[marker_id], dtype=float)
+        if corners.shape == (1, 4, 2):
+            corners = corners[0]
+        if corners.shape != (4, 2) or not np.all(np.isfinite(corners)):
+            raise SessionCalibrationError(
+                f"reference marker {marker_id} must have finite (4, 2) corners"
+            )
+        frame[marker_id] = corners.copy()
+    return frame
+
+
+def _serializable_marker_corners(
+    corners_uv: Mapping[int, np.ndarray]
+) -> dict[int, tuple[tuple[float, float], ...]]:
+    result: dict[int, tuple[tuple[float, float], ...]] = {}
+    for marker_id, corners in corners_uv.items():
+        array = np.asarray(corners, dtype=float)
+        if array.shape == (1, 4, 2):
+            array = array[0]
+        if array.shape == (4, 2) and np.all(np.isfinite(array)):
+            result[int(marker_id)] = tuple((float(point[0]), float(point[1])) for point in array)
+    return dict(sorted(result.items()))
+
+
 def load_calibration(path: Path, serial: str) -> Calibration:
     try:
         record = json.loads(path.read_text(encoding="utf-8"))
@@ -183,6 +340,7 @@ def run_camera_worker(
     target_config: RedTargetConfig,
     warmup_frames: int,
     depth_sample_radius: int,
+    reference_tracker: ArucoReferenceTracker | None = None,
 ) -> None:
     """Read D435i frames until stopped and publish the latest display snapshot."""
     try:
@@ -218,9 +376,22 @@ def run_camera_worker(
                 )
                 continue
             rgb = np.asanyarray(color_frame.get_data()).copy()
+            reference: ReferenceStatus | None = None
+            pixel_to_machine = calibration.pixel_to_machine
+            if reference_tracker is not None:
+                try:
+                    reference = reference_tracker.update(
+                        detect_marker_corners(rgb, reference_tracker.layout)
+                    )
+                    pixel_to_machine = reference.matrix_pixel_to_machine
+                except SessionCalibrationError as exc:
+                    reference = ReferenceStatus("reference_lost", str(exc), {}, None, None)
+                    pixel_to_machine = None
             target = find_red_target(rgb, target_config)
             if target is None:
-                store.publish(make_bmp_bytes(rgb), snapshot_state(None, None, error=None))
+                store.publish(
+                    make_bmp_bytes(rgb), snapshot_state(None, None, error=None, reference=reference)
+                )
                 continue
             try:
                 color_profile = color_frame.profile.as_video_stream_profile()
@@ -229,15 +400,20 @@ def run_camera_worker(
                     depth_frame=depth_frame,
                     color_intrinsics=color_profile.get_intrinsics(),
                     deproject=rs.rs2_deproject_pixel_to_point,
-                    pixel_to_machine=calibration.pixel_to_machine,
+                    pixel_to_machine=pixel_to_machine,
                     width=int(color_profile.width()),
                     height=int(color_profile.height()),
                     depth_sample_radius=depth_sample_radius,
                 )
             except RedTargetError as exc:
-                store.publish(make_bmp_bytes(rgb), snapshot_state(target, None, error=str(exc)))
+                store.publish(
+                    make_bmp_bytes(rgb),
+                    snapshot_state(target, None, error=str(exc), reference=reference),
+                )
                 continue
-            store.publish(make_bmp_bytes(rgb), snapshot_state(target, observation, error=None))
+            store.publish(
+                make_bmp_bytes(rgb), snapshot_state(target, observation, error=None, reference=reference)
+            )
     except Exception as exc:
         store.publish(
             make_bmp_bytes(np.zeros((1, 1, 3), dtype=np.uint8)),
@@ -263,6 +439,17 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Show pixel/depth/camera XYZ without any machine-plane prediction",
     )
+    parser.add_argument(
+        "--aruco-reference-board",
+        action="store_true",
+        help="Derive display-only XY from the registered A4 ArUco reference board",
+    )
+    parser.add_argument(
+        "--reference-registration",
+        type=Path,
+        default=Path("docs/dayuwriter/calibration/camera-a-a4-aruco-registration.json"),
+        help="Display-only A4 reference-board registration record",
+    )
     parser.add_argument("--port", type=int, default=8765, help="Loopback HTTP port")
     parser.add_argument(
         "--min-area-px",
@@ -282,11 +469,29 @@ def main() -> int:
             raise DashboardError("--port must be between 1 and 65535")
         if args.warmup_frames < 0 or args.depth_sample_radius < 0:
             raise DashboardError("warmup and depth radius must be non-negative")
-        calibration = (
-            Calibration(serial=args.serial, pixel_to_machine=None)
-            if args.camera_xyz_only
-            else load_calibration(args.calibration, args.serial)
-        )
+        if args.camera_xyz_only and args.aruco_reference_board:
+            raise DashboardError("--camera-xyz-only and --aruco-reference-board cannot be combined")
+        reference_tracker: ArucoReferenceTracker | None = None
+        if args.aruco_reference_board:
+            layout = default_layout()
+            registration: dict[str, object] | None
+            registration_detail: str | None = None
+            try:
+                registration = load_registration(args.reference_registration, layout)
+            except BoardRegistrationError as exc:
+                registration = None
+                registration_detail = str(exc)
+            calibration = Calibration(serial=args.serial, pixel_to_machine=None)
+            reference_tracker = ArucoReferenceTracker(
+                layout=layout,
+                registration=registration,
+                serial=args.serial,
+                registration_detail=registration_detail,
+            )
+        elif args.camera_xyz_only:
+            calibration = Calibration(serial=args.serial, pixel_to_machine=None)
+        else:
+            calibration = load_calibration(args.calibration, args.serial)
         target_config = RedTargetConfig(min_area_px=args.min_area_px)
         store = SnapshotStore()
         stop_event = threading.Event()
@@ -299,6 +504,7 @@ def main() -> int:
                 "target_config": target_config,
                 "warmup_frames": args.warmup_frames,
                 "depth_sample_radius": args.depth_sample_radius,
+                "reference_tracker": reference_tracker,
             },
             name="d435i-red-target",
             daemon=True,
