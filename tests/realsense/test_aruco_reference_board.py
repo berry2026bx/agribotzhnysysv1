@@ -19,11 +19,14 @@ def test_layout_has_exact_geometry_and_six_non_overlapping_markers() -> None:
     layout = default_layout()
 
     assert (layout.width_mm, layout.height_mm) == (A4_WIDTH_MM, A4_HEIGHT_MM)
+    assert BOARD_REVISION == "a4-aruco-v2"
     assert layout.revision == BOARD_REVISION
     assert [marker.identifier for marker in layout.markers] == [0, 1, 2, 3, 4, 5]
     assert layout.marker_size_mm == 40.0
     assert layout.p0_board_xy_mm == pytest.approx((148.5, 105.0))
     assert layout.machine_xy_for_board((148.5, 105.0)) == pytest.approx((0.0, 0.0))
+    assert layout.machine_xy_for_board((178.5, 105.0)) == pytest.approx((30.0, 0.0))
+    assert layout.machine_xy_for_board((148.5, 75.0)) == pytest.approx((0.0, 30.0))
     assert len(layout.marker_corner_machine_xy(0)) == 4
     for first in layout.markers:
         for second in layout.markers:
@@ -34,7 +37,7 @@ def test_layout_has_exact_geometry_and_six_non_overlapping_markers() -> None:
 def test_svg_is_exact_a4_and_has_scale_bar_and_six_markers(tmp_path: Path) -> None:
     layout = default_layout()
     svg = render_a4_svg(layout)
-    output = tmp_path / "a4-aruco-v1.svg"
+    output = tmp_path / "a4-aruco-v2.svg"
 
     write_reference_board(output, layout)
 

@@ -13,7 +13,7 @@ import cv2
 
 A4_WIDTH_MM = 297.0
 A4_HEIGHT_MM = 210.0
-BOARD_REVISION = "a4-aruco-v1"
+BOARD_REVISION = "a4-aruco-v2"
 ARUCO_DICTIONARY_NAME = "DICT_4X4_50"
 FIT_MARKER_IDS = frozenset({0, 1, 3, 4})
 VALIDATION_MARKER_IDS = frozenset({2, 5})
@@ -81,9 +81,14 @@ class ArucoBoardLayout:
         )
 
     def machine_xy_for_board(self, board_xy_mm: tuple[float, float]) -> tuple[float, float]:
+        """Map SVG paper coordinates to the writer's Cartesian P0 frame.
+
+        SVG Y increases downward on the printed page; the writer's verified Y+
+        direction is upward from P0 in the paper coordinate convention.
+        """
         return (
             float(board_xy_mm[0] - self.p0_board_xy_mm[0]),
-            float(board_xy_mm[1] - self.p0_board_xy_mm[1]),
+            float(self.p0_board_xy_mm[1] - board_xy_mm[1]),
         )
 
     def _marker(self, identifier: int) -> MarkerDefinition:
@@ -94,7 +99,7 @@ class ArucoBoardLayout:
 
 
 def default_layout() -> ArucoBoardLayout:
-    """Return the fixed physical layout for revision ``a4-aruco-v1``."""
+    """Return the fixed physical layout for revision ``a4-aruco-v2``."""
     marker_size_mm = 40.0
     marker_centers = ((25.0, 25.0), (272.0, 25.0), (272.0, 105.0), (272.0, 185.0), (25.0, 185.0), (25.0, 105.0))
     return ArucoBoardLayout(
@@ -117,7 +122,7 @@ def render_a4_svg(layout: ArucoBoardLayout) -> str:
     marker_elements = "\n".join(_svg_marker(marker) for marker in layout.markers)
     p0_x, p0_y = layout.p0_board_xy_mm
     x_plus_30_x = p0_x + 30.0
-    y_plus_30_y = p0_y + 30.0
+    y_plus_30_y = p0_y - 30.0
     return f'''<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="{layout.width_mm:g}mm" height="{layout.height_mm:g}mm" viewBox="0 0 {layout.width_mm:g} {layout.height_mm:g}">
   <rect x="0" y="0" width="{layout.width_mm:g}" height="{layout.height_mm:g}" fill="white"/>
@@ -137,7 +142,7 @@ def render_a4_svg(layout: ArucoBoardLayout) -> str:
   </g>
   <g stroke="#12532b" stroke-width="0.8" fill="none">
     <line x1="{p0_x + 8:g}" y1="{p0_y:g}" x2="{p0_x + 28:g}" y2="{p0_y:g}"/>
-    <line x1="{p0_x:g}" y1="{p0_y + 8:g}" x2="{p0_x:g}" y2="{p0_y + 28:g}"/>
+    <line x1="{p0_x:g}" y1="{p0_y - 8:g}" x2="{p0_x:g}" y2="{p0_y - 28:g}"/>
   </g>
   <g fill="#12532b" font-family="Arial, sans-serif" font-size="4">
     <text x="{x_plus_30_x + 6:g}" y="{p0_y + 1.5:g}">X+30 mm</text>

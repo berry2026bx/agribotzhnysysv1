@@ -13,7 +13,7 @@ its height or tilt, or P0 relative to the writer changes.
 
 ## Print And Mount
 
-1. Open [a4-aruco-v1.svg](../reference-board/a4-aruco-v1.svg) and print it at
+1. Open [a4-aruco-v2.svg](../reference-board/a4-aruco-v2.svg) and print it at
    `100%` / actual size. Do not select fit-to-page or scaling.
 2. Measure the printed 100 mm verification scale. Do not use the board unless
    it measures 100 mm.
@@ -27,14 +27,15 @@ its height or tilt, or P0 relative to the writer changes.
 This is a one-time physical operation after mounting a new board.
 
 1. Keep the pen tip clear of the paper and write surface.
-2. Rotate the board so its printed X+ direction points toward the writer's
-   physical X+ direction (right in the previously verified setup) and its
-   printed Y+ direction points toward physical Y+ (forward).
+2. Place the board in the established paper Cartesian convention: printed X+
+   is to the right of P0 and printed Y+ is above P0. These must agree with the
+   writer's previously verified X+ and Y+ directions, not with the downwards
+   SVG screen-coordinate direction.
 3. Put the pen tip on the printed P0 cross. This must be the existing physical
    P0 mark used by the writer, not a new origin.
 4. From P0, use a bounded X+30 mm jog. The pen tip must land on the printed
    `X+30 mm` cross to the right of P0. Return to P0, then use a bounded Y+30
-   mm jog; the pen tip must land on the printed `Y+30 mm` cross below P0.
+   mm jog; the pen tip must land on the printed `Y+30 mm` cross above P0.
 5. Adjust the board physically until all three checks are correct, then secure
    the rigid backing.
 6. Use the Register board button on the local page and
