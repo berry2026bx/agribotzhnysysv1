@@ -13,8 +13,10 @@ its height or tilt, or P0 relative to the writer changes.
 
 ## Print And Mount
 
-1. Open [a4-aruco-v3.svg](../reference-board/a4-aruco-v3.svg) and print it at
-   `100%` / actual size. Do not select fit-to-page or scaling.
+1. Open [a4-aruco-v3-300dpi.png](../reference-board/a4-aruco-v3-300dpi.png)
+   for ordinary image printing, or [a4-aruco-v3.svg](../reference-board/a4-aruco-v3.svg)
+   for vector-capable printing. Print at `100%` / actual size; do not select
+   fit-to-page or scaling.
 2. Choose A4, landscape, `100%` / actual size, and disable any printer-driver
    fit-to-page or shrink-to-printable-area option. The markers have a 12 mm
    print-safe margin, so the page itself must not be reduced to protect them.

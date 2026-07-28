@@ -1,5 +1,8 @@
 from pathlib import Path
+import struct
 
+import cv2
+import numpy as np
 import pytest
 
 from vision.realsense.aruco_reference_board import (
@@ -7,10 +10,15 @@ from vision.realsense.aruco_reference_board import (
     A4_WIDTH_MM,
     BOARD_REVISION,
     BoardRegistrationError,
+    A4_PNG_DPI,
+    A4_PNG_HEIGHT_PX,
+    A4_PNG_WIDTH_PX,
     build_registration_record,
     default_layout,
+    render_a4_png,
     load_registration,
     render_a4_svg,
+    write_reference_board_png,
     write_reference_board,
 )
 
@@ -62,6 +70,20 @@ def test_svg_is_exact_a4_and_has_scale_bar_and_six_markers(tmp_path: Path) -> No
     assert output.read_text(encoding="utf-8") == svg
 
 
+def test_png_is_300_dpi_a4_landscape_with_embedded_physical_resolution(tmp_path: Path) -> None:
+    layout = default_layout()
+    png = render_a4_png(layout)
+    output = tmp_path / "a4-aruco-v3.png"
+
+    write_reference_board_png(output, layout)
+
+    decoded = cv2.imdecode(np.frombuffer(png, dtype=np.uint8), cv2.IMREAD_COLOR)
+    assert decoded is not None
+    assert decoded.shape[:2] == (A4_PNG_HEIGHT_PX, A4_PNG_WIDTH_PX)
+    assert output.read_bytes() == png
+    assert _png_chunk(png, b"pHYs") == struct.pack(">IIB", round(A4_PNG_DPI / 0.0254), round(A4_PNG_DPI / 0.0254), 1)
+
+
 def test_registration_rejects_wrong_revision(tmp_path: Path) -> None:
     path = tmp_path / "registration.json"
     path.write_text('{"board_revision":"wrong","operator_confirmed":true}', encoding="utf-8")
@@ -76,3 +98,16 @@ def test_registration_record_is_display_only() -> None:
     assert record["motion_permission"] == "display_only"
     assert record["operator_confirmed"] is True
     assert record["board"]["p0_machine_xy_mm"] == {"x": 0.0, "y": 0.0}
+
+
+def _png_chunk(payload: bytes, expected_type: bytes) -> bytes:
+    offset = 8
+    while offset < len(payload):
+        length = struct.unpack(">I", payload[offset : offset + 4])[0]
+        chunk_type = payload[offset + 4 : offset + 8]
+        data_start = offset + 8
+        data_end = data_start + length
+        if chunk_type == expected_type:
+            return payload[data_start:data_end]
+        offset = data_end + 4
+    raise AssertionError(f"missing PNG chunk: {expected_type!r}")

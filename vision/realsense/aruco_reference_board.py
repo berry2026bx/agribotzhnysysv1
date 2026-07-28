@@ -5,14 +5,21 @@ from __future__ import annotations
 import argparse
 import base64
 import json
+import struct
+import zlib
 from dataclasses import dataclass
 from pathlib import Path
 
 import cv2
+import numpy as np
 
 
 A4_WIDTH_MM = 297.0
 A4_HEIGHT_MM = 210.0
+A4_PNG_DPI = 300.0
+A4_PNG_PIXELS_PER_MM = A4_PNG_DPI / 25.4
+A4_PNG_WIDTH_PX = round(A4_WIDTH_MM * A4_PNG_PIXELS_PER_MM)
+A4_PNG_HEIGHT_PX = round(A4_HEIGHT_MM * A4_PNG_PIXELS_PER_MM)
 BOARD_REVISION = "a4-aruco-v3"
 ARUCO_DICTIONARY_NAME = "DICT_4X4_50"
 FIT_MARKER_IDS = frozenset({0, 1, 3, 4})
@@ -165,6 +172,53 @@ def write_reference_board(path: Path, layout: ArucoBoardLayout) -> None:
     path.write_text(render_a4_svg(layout), encoding="utf-8")
 
 
+def render_a4_png(layout: ArucoBoardLayout) -> bytes:
+    """Render the A4 board at 300 DPI with physical-resolution PNG metadata."""
+    if layout.revision != BOARD_REVISION:
+        raise BoardRegistrationError(f"unsupported board revision: {layout.revision}")
+    image = np.full((A4_PNG_HEIGHT_PX, A4_PNG_WIDTH_PX, 3), 255, dtype=np.uint8)
+    for marker in layout.markers:
+        _draw_png_marker(image, marker)
+
+    p0_x, p0_y = layout.p0_board_xy_mm
+    x_plus_30_x = p0_x + 30.0
+    y_plus_30_y = p0_y - 30.0
+    green = (43, 83, 18)
+    black = (0, 0, 0)
+    _line_mm(image, (p0_x - 6.0, p0_y), (p0_x + 6.0, p0_y), green)
+    _line_mm(image, (p0_x, p0_y - 6.0), (p0_x, p0_y + 6.0), green)
+    _line_mm(image, (x_plus_30_x - 4.0, p0_y), (x_plus_30_x + 4.0, p0_y), green)
+    _line_mm(image, (x_plus_30_x, p0_y - 4.0), (x_plus_30_x, p0_y + 4.0), green)
+    _line_mm(image, (p0_x - 4.0, y_plus_30_y), (p0_x + 4.0, y_plus_30_y), green)
+    _line_mm(image, (p0_x, y_plus_30_y - 4.0), (p0_x, y_plus_30_y + 4.0), green)
+    _line_mm(image, (p0_x + 8.0, p0_y), (p0_x + 28.0, p0_y), green)
+    _line_mm(image, (p0_x, p0_y - 8.0), (p0_x, p0_y - 28.0), green)
+    _text_mm(
+        image,
+        f"{layout.revision} | {ARUCO_DICTIONARY_NAME} | print at 100%",
+        (p0_x, 10.0),
+        black,
+        centered=True,
+    )
+    _text_mm(image, "P0", (p0_x + 8.0, p0_y - 8.0), green)
+    _text_mm(image, "X+30 mm", (x_plus_30_x + 6.0, p0_y + 1.5), green)
+    _text_mm(image, "Y+30 mm", (p0_x + 6.0, y_plus_30_y + 2.0), green)
+    _line_mm(image, (98.5, 195.0), (198.5, 195.0), black)
+    _line_mm(image, (98.5, 192.0), (98.5, 198.0), black)
+    _line_mm(image, (198.5, 192.0), (198.5, 198.0), black)
+    _text_mm(image, "100 mm verification scale", (148.5, 202.0), black, centered=True)
+    success, encoded = cv2.imencode(".png", image)
+    if not success:
+        raise BoardRegistrationError("cannot encode A4 PNG reference board")
+    return _with_png_physical_resolution(encoded.tobytes(), A4_PNG_DPI)
+
+
+def write_reference_board_png(path: Path, layout: ArucoBoardLayout) -> None:
+    """Write the deterministic 300 DPI A4 PNG artifact for printing."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(render_a4_png(layout))
+
+
 def build_registration_record(layout: ArucoBoardLayout, captured_at_utc: str) -> dict[str, object]:
     """Build the operator-confirmed board-to-P0 registration record."""
     timestamp = _validated_timestamp(captured_at_utc)
@@ -202,14 +256,22 @@ def load_registration(path: Path, layout: ArucoBoardLayout) -> dict[str, object]
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Generate the DayuWriter A4 ArUco reference board.")
-    parser.add_argument("--output", required=True, type=Path, help="A4 SVG output path")
+    parser.add_argument("--output", type=Path, help="A4 SVG output path")
+    parser.add_argument("--png-output", type=Path, help="300 DPI A4 PNG output path")
     return parser
 
 
 def main() -> int:
     args = build_parser().parse_args()
-    write_reference_board(args.output, default_layout())
-    print(f"A4 ArUco reference board written to {args.output}")
+    if args.output is None and args.png_output is None:
+        raise SystemExit("provide --output for SVG and/or --png-output for PNG")
+    layout = default_layout()
+    if args.output is not None:
+        write_reference_board(args.output, layout)
+        print(f"A4 ArUco SVG reference board written to {args.output}")
+    if args.png_output is not None:
+        write_reference_board_png(args.png_output, layout)
+        print(f"A4 ArUco 300 DPI PNG reference board written to {args.png_output}")
     return 0
 
 
@@ -223,13 +285,90 @@ def _svg_marker(marker: MarkerDefinition) -> str:
 
 
 def _marker_png_base64(identifier: int) -> str:
-    dictionary_id = getattr(cv2.aruco, ARUCO_DICTIONARY_NAME)
-    dictionary = cv2.aruco.getPredefinedDictionary(dictionary_id)
-    image = cv2.aruco.generateImageMarker(dictionary, identifier, 480)
+    image = _marker_image(identifier, 480)
     success, encoded = cv2.imencode(".png", image)
     if not success:
         raise BoardRegistrationError(f"cannot encode marker id {identifier}")
     return base64.b64encode(encoded.tobytes()).decode("ascii")
+
+
+def _marker_image(identifier: int, side_px: int) -> np.ndarray:
+    dictionary_id = getattr(cv2.aruco, ARUCO_DICTIONARY_NAME)
+    dictionary = cv2.aruco.getPredefinedDictionary(dictionary_id)
+    return cv2.aruco.generateImageMarker(dictionary, identifier, side_px)
+
+
+def _draw_png_marker(image: np.ndarray, marker: MarkerDefinition) -> None:
+    bounds = marker.bounds
+    left, top = _pixel_point((bounds.left_mm, bounds.top_mm))
+    right, bottom = _pixel_point((bounds.right_mm, bounds.bottom_mm))
+    marker_image = cv2.resize(
+        _marker_image(marker.identifier, 480),
+        (right - left, bottom - top),
+        interpolation=cv2.INTER_NEAREST,
+    )
+    image[top:bottom, left:right] = cv2.cvtColor(marker_image, cv2.COLOR_GRAY2BGR)
+    _text_mm(
+        image,
+        f"ID {marker.identifier}",
+        (marker.center_board_xy_mm[0], bounds.bottom_mm + 4.0),
+        (0, 0, 0),
+        centered=True,
+    )
+
+
+def _line_mm(
+    image: np.ndarray,
+    start_mm: tuple[float, float],
+    end_mm: tuple[float, float],
+    color: tuple[int, int, int],
+) -> None:
+    cv2.line(
+        image,
+        _pixel_point(start_mm),
+        _pixel_point(end_mm),
+        color,
+        max(1, round(0.8 * A4_PNG_PIXELS_PER_MM)),
+        lineType=cv2.LINE_AA,
+    )
+
+
+def _text_mm(
+    image: np.ndarray,
+    text: str,
+    position_mm: tuple[float, float],
+    color: tuple[int, int, int],
+    *,
+    centered: bool = False,
+) -> None:
+    point = _pixel_point(position_mm)
+    font_scale = 4.0 * A4_PNG_PIXELS_PER_MM / 30.0
+    thickness = max(1, round(0.6 * A4_PNG_PIXELS_PER_MM))
+    if centered:
+        text_size, _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)
+        point = (point[0] - text_size[0] // 2, point[1])
+    cv2.putText(image, text, point, cv2.FONT_HERSHEY_SIMPLEX, font_scale, color, thickness, cv2.LINE_AA)
+
+
+def _pixel_point(point_mm: tuple[float, float]) -> tuple[int, int]:
+    return (round(point_mm[0] * A4_PNG_PIXELS_PER_MM), round(point_mm[1] * A4_PNG_PIXELS_PER_MM))
+
+
+def _with_png_physical_resolution(png: bytes, dpi: float) -> bytes:
+    signature = b"\x89PNG\r\n\x1a\n"
+    if not png.startswith(signature):
+        raise BoardRegistrationError("encoded reference board is not a PNG")
+    ihdr_length = struct.unpack(">I", png[8:12])[0]
+    after_ihdr = 8 + 12 + ihdr_length
+    pixels_per_meter = round(dpi / 0.0254)
+    physical_data = struct.pack(">IIB", pixels_per_meter, pixels_per_meter, 1)
+    physical_chunk = (
+        struct.pack(">I", len(physical_data))
+        + b"pHYs"
+        + physical_data
+        + struct.pack(">I", zlib.crc32(b"pHYs" + physical_data) & 0xFFFFFFFF)
+    )
+    return png[:after_ihdr] + physical_chunk + png[after_ihdr:]
 
 
 def _validated_timestamp(value: str) -> str:
