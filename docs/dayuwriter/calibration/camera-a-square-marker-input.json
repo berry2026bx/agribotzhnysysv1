@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "captured_at_utc": "2026-07-28T07:13:22Z",
+  "captured_at_utc": "2026-07-28T07:30:04Z",
   "camera": {
     "serial": "231122070403"
   },
@@ -36,6 +36,16 @@
       "id": "x30_y30_held_out",
       "pixel_uv": {"u": 379.7153846153846, "v": 258.0},
       "machine_xy_mm": {"x": 30.0, "y": 30.0}
+    },
+    {
+      "id": "x30_y0_held_out",
+      "pixel_uv": {"u": 354.5919098822325, "v": 268.2319415983607},
+      "machine_xy_mm": {"x": 30.0, "y": 0.0}
+    },
+    {
+      "id": "x0_y30_held_out",
+      "pixel_uv": {"u": 358.3944444444444, "v": 247.9722222222222},
+      "machine_xy_mm": {"x": 0.0, "y": 30.0}
     }
   ],
   "capture_quality": {
@@ -80,8 +90,24 @@
         "depth_m_range_for_valid_samples": [0.4470000267028809, 0.4500000178813934],
         "median_area_px": 54,
         "median_bbox_uvwh": {"width": 12, "height": 6}
+      },
+      "x30_y0_held_out": {
+        "red_target_pixel_samples": 12,
+        "valid_depth_samples": 12,
+        "invalid_depth_samples": 0,
+        "depth_m_range_for_valid_samples": [0.4330000281333923, 0.4360000193119049],
+        "median_area_px": 62,
+        "median_bbox_uvwh": {"width": 14, "height": 7}
+      },
+      "x0_y30_held_out": {
+        "red_target_pixel_samples": 12,
+        "valid_depth_samples": 12,
+        "invalid_depth_samples": 0,
+        "depth_m_range_for_valid_samples": [0.4550000131130219, 0.4570000171661377],
+        "median_area_px": 37,
+        "median_bbox_uvwh": {"width": 10, "height": 5}
       }
   },
   "motion_permission": "display_only",
-  "status": "Four fit points and one independent held-out validation point captured; fit the display-only mapping and inspect its validation error before use."
+  "status": "Four fit points and three independent held-out validation points captured; fit the display-only mapping and inspect its validation error before use."
 }
