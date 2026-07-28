@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "captured_at_utc": "2026-07-28T09:05:16+00:00",
+  "camera": {
+    "serial": "231122070403"
+  },
+  "fit_points": [
+    {
+      "id": "x60_y0",
+      "pixel_uv": {
+        "u": 382.1408450704226,
+        "v": 283.1690140845071
+      },
+      "machine_xy_mm": {
+        "x": 60.0,
+        "y": 0.0
+      }
+    },
+    {
+      "id": "x60_y60",
+      "pixel_uv": {
+        "u": 444.6428571428572,
+        "v": 258.5714285714286
+      },
+      "machine_xy_mm": {
+        "x": 60.0,
+        "y": 60.0
+      }
+    },
+    {
+      "id": "x0_y60",
+      "pixel_uv": {
+        "u": 362.82978723404256,
+        "v": 303.3191489361702
+      },
+      "machine_xy_mm": {
+        "x": 0.0,
+        "y": 60.0
+      }
+    },
+    {
+      "id": "p0",
+      "pixel_uv": {
+        "u": 297.32758620689657,
+        "v": 341.1034482758621
+      },
+      "machine_xy_mm": {
+        "x": 0.0,
+        "y": 0.0
+      }
+    }
+  ],
+  "matrix_pixel_to_machine": [
+    [
+      -0.06349370622392336,
+      -0.11007157951100141,
+      56.424225739259924
+    ],
+    [
+      -0.010160031668089431,
+      -0.014873803601297197,
+      8.09436338904004
+    ],
+    [
+      -0.0011123248003701292,
+      -0.001971984188701259,
+      1.0
+    ]
+  ],
+  "validation": {
+    "count": 1,
+    "mean_error_mm": 28.053010246077413,
+    "max_error_mm": 28.053010246077413,
+    "points": [
+      {
+        "id": "x35_y30_held_out",
+        "pixel_uv": {
+          "u": 356.1641791044776,
+          "v": 331.73523685918235
+        },
+        "expected_machine_xy_mm": {
+          "x": 35.0,
+          "y": 30.0
+        },
+        "predicted_machine_xy_mm": {
+          "x": 53.71889792397765,
+          "y": 9.105640847869264
+        },
+        "error_mm": 28.053010246077413
+      }
+    ]
+  },
+  "motion_permission": "display_only",
+  "limitations": [
+    "The artifact is valid only for this camera serial and unchanged mount pose.",
+    "This artifact does not authorize GRBL motion."
+  ]
+}
