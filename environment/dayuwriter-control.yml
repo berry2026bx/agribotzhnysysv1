@@ -9,3 +9,4 @@ dependencies:
   - pip:
       - numpy>=2.0
       - pyrealsense2>=2.58
+      - opencv-contrib-python>=4.13,<4.14
