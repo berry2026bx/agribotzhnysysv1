@@ -50,7 +50,19 @@
       }
     }
   ],
-  "validation_points": [],
+  "validation_points": [
+    {
+      "id": "x30_y30_held_out",
+      "pixel_uv": {
+        "u": 379.7887323943662,
+        "v": 259.0
+      },
+      "machine_xy_mm": {
+        "x": 30.0,
+        "y": 30.0
+      }
+    }
+  ],
   "capture_quality": {
     "p0": {
       "red_target_pixel_samples": 10,
@@ -73,8 +85,14 @@
       "valid_depth_samples": 10,
       "invalid_depth_samples": 2,
       "depth_m_range_for_valid_samples": [0.4750000238418579, 0.4770000278949738]
+    },
+    "x30_y30_held_out": {
+      "red_target_pixel_samples": 12,
+      "valid_depth_samples": 12,
+      "invalid_depth_samples": 0,
+      "depth_m_range_for_valid_samples": [0.4490000307559967, 0.4570000171661377]
     }
   },
   "motion_permission": "display_only",
-  "status": "four fit points captured: collect held-out x30_y30 before accepting the display-only mapping"
+  "status": "four fit points plus one held-out validation point captured: fit and inspect the display-only mapping"
 }
