@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "captured_at_utc": "2026-07-28T07:00:26Z",
+  "camera": {
+    "serial": "231122070403"
+  },
+  "marker": {
+    "shape": "filled_square",
+    "side_length_mm": 10.0,
+    "coordinate_definition": "The physical reference coordinate is the geometric center of the same square marker."
+  },
+  "fit_points": [
+    {
+      "id": "p0",
+      "pixel_uv": {"u": 329.0, "v": 256.8478260869565},
+      "machine_xy_mm": {"x": 0.0, "y": 0.0}
+    }
+  ],
+  "validation_points": [],
+  "capture_quality": {
+    "p0": {
+      "red_target_pixel_samples": 12,
+      "valid_depth_samples": 12,
+      "invalid_depth_samples": 0,
+      "depth_m_range_for_valid_samples": [0.4440000355243683, 0.4470000267028809],
+      "median_area_px": 46,
+      "median_bbox_uvwh": {"width": 12, "height": 5}
+    }
+  },
+  "motion_permission": "display_only",
+  "status": "New square-marker calibration in progress; p0 captured, no mapping is available until four non-collinear fit points and an independent held-out validation point are captured."
+}
