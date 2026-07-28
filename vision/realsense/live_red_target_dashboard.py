@@ -23,7 +23,13 @@ from .aruco_plane_calibration import (
     build_aruco_session_record,
     detect_marker_corners,
 )
-from .aruco_reference_board import ArucoBoardLayout, BoardRegistrationError, default_layout, load_registration
+from .aruco_reference_board import (
+    ArucoBoardLayout,
+    BoardRegistrationError,
+    build_registration_record,
+    default_layout,
+    load_registration,
+)
 from .red_target import (
     RedTarget,
     RedTargetConfig,
@@ -77,6 +83,16 @@ class ArucoReferenceTracker:
         self._registration_detail = registration_detail
         self._complete_frames: list[dict[int, np.ndarray]] = []
 
+    def confirm_registration(self, registration: dict[str, object]) -> None:
+        """Accept a locally confirmed display-only board registration and restart collection."""
+        if registration.get("operator_confirmed") is not True:
+            raise DashboardError("board registration requires operator confirmation")
+        if registration.get("motion_permission") != "display_only":
+            raise DashboardError("board registration must be display_only")
+        self._registration = registration
+        self._registration_detail = None
+        self._complete_frames.clear()
+
     def update(self, corners_uv: Mapping[int, np.ndarray]) -> ReferenceStatus:
         """Return a new mapping status and never retain a stale matrix after failure."""
         marker_corners = _serializable_marker_corners(corners_uv)
@@ -126,6 +142,32 @@ class ArucoReferenceTracker:
             result.matrix_pixel_to_machine,
             result.record["validation"],
         )
+
+
+class BoardRegistrationService:
+    """Persist exactly one local operator confirmation; it has no motion fields."""
+
+    def __init__(
+        self,
+        *,
+        layout: ArucoBoardLayout,
+        registration_path: Path,
+        tracker: ArucoReferenceTracker,
+        now: callable | None = None,
+    ) -> None:
+        self._layout = layout
+        self._registration_path = registration_path
+        self._tracker = tracker
+        self._now = now or (lambda: datetime.now(timezone.utc).replace(microsecond=0).isoformat())
+
+    def register(self, payload: object) -> dict[str, object]:
+        if payload != {"operator_confirmed": True}:
+            raise DashboardError("register-board requires only operator_confirmed: true")
+        record = build_registration_record(self._layout, self._now())
+        self._registration_path.parent.mkdir(parents=True, exist_ok=True)
+        self._registration_path.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+        self._tracker.confirm_registration(record)
+        return record
 
 
 @dataclass(frozen=True)
@@ -472,6 +514,7 @@ def main() -> int:
         if args.camera_xyz_only and args.aruco_reference_board:
             raise DashboardError("--camera-xyz-only and --aruco-reference-board cannot be combined")
         reference_tracker: ArucoReferenceTracker | None = None
+        registration_service: BoardRegistrationService | None = None
         if args.aruco_reference_board:
             layout = default_layout()
             registration: dict[str, object] | None
@@ -487,6 +530,11 @@ def main() -> int:
                 registration=registration,
                 serial=args.serial,
                 registration_detail=registration_detail,
+            )
+            registration_service = BoardRegistrationService(
+                layout=layout,
+                registration_path=args.reference_registration,
+                tracker=reference_tracker,
             )
         elif args.camera_xyz_only:
             calibration = Calibration(serial=args.serial, pixel_to_machine=None)
@@ -509,7 +557,9 @@ def main() -> int:
             name="d435i-red-target",
             daemon=True,
         )
-        server = ThreadingHTTPServer(("127.0.0.1", args.port), _make_handler(store))
+        server = ThreadingHTTPServer(
+            ("127.0.0.1", args.port), _make_handler(store, registration_service)
+        )
     except (DashboardError, OSError, RedTargetError) as exc:
         print(f"Live red target dashboard failed: {exc}")
         return 1
@@ -528,7 +578,9 @@ def main() -> int:
     return 0
 
 
-def _make_handler(store: SnapshotStore) -> type[BaseHTTPRequestHandler]:
+def _make_handler(
+    store: SnapshotStore, registration_service: BoardRegistrationService | None = None
+) -> type[BaseHTTPRequestHandler]:
     class DashboardHandler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:  # noqa: N802
             path = urlparse(self.path).path
@@ -544,12 +596,47 @@ def _make_handler(store: SnapshotStore) -> type[BaseHTTPRequestHandler]:
             else:
                 self.send_error(404, "Not Found")
 
+        def do_POST(self) -> None:  # noqa: N802
+            if urlparse(self.path).path != "/register-board" or registration_service is None:
+                self.send_error(404, "Not Found")
+                return
+            try:
+                payload = self._read_json_body()
+                record = registration_service.register(payload)
+            except DashboardError as exc:
+                self._send_error_json(400, str(exc))
+                return
+            self._send_bytes(json.dumps(record).encode("utf-8"), "application/json; charset=utf-8")
+
         def log_message(self, format: str, *args: object) -> None:
             return
 
         def _send_bytes(self, payload: bytes, content_type: str) -> None:
             self.send_response(200)
             self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(payload)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(payload)
+
+        def _read_json_body(self) -> object:
+            try:
+                content_length = int(self.headers.get("Content-Length", "0"))
+            except ValueError as exc:
+                raise DashboardError("invalid request content length") from exc
+            if content_length <= 0 or content_length > 4096:
+                raise DashboardError("register-board request body must be between 1 and 4096 bytes")
+            try:
+                return json.loads(self.rfile.read(content_length).decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise DashboardError("register-board request must be JSON") from exc
+
+        def _send_error_json(self, status: int, message: str) -> None:
+            payload = json.dumps(
+                {"motion_permission": "display_only", "error": message}
+            ).encode("utf-8")
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Content-Length", str(len(payload)))
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
@@ -567,17 +654,33 @@ main{display:grid;grid-template-columns:640px minmax(280px,1fr);gap:20px;padding
 #stage{position:relative;width:640px;height:480px;background:#171d18}
 #frame{display:block;width:640px;height:480px}
 #box{position:absolute;border:3px solid #d61f26;display:none;box-sizing:border-box}
-section{background:#fff;border:1px solid #ccd3ca;padding:16px;max-width:440px}
-h1{font-size:20px;margin:0 0 16px}pre{white-space:pre-wrap;word-break:break-word;margin:0;font-size:14px}
+#reference-overlay{position:absolute;inset:0;width:640px;height:480px;pointer-events:none}
+#reference-overlay polygon{fill:none;stroke-width:2}
+aside{display:grid;align-content:start;gap:12px;max-width:440px}
+section{background:#fff;border:1px solid #ccd3ca;padding:16px}
+h1{font-size:20px;margin:0 0 16px}h2{font-size:16px;margin:0 0 10px}pre{white-space:pre-wrap;word-break:break-word;margin:0;font-size:14px}
 .warn{color:#9d1c21;font-weight:700}
-</style></head><body><main><div id="stage"><img id="frame" alt="Live D435i RGB"><div id="box"></div></div>
-<section><h1>Display-only red target</h1><p class="warn">No GRBL motion is available in this page.</p><pre id="state">starting</pre></section></main>
+.registration{display:grid;gap:10px}.registration label{line-height:1.35}.registration button{justify-self:start}
+</style></head><body><main><div id="stage"><img id="frame" alt="Live D435i RGB"><div id="box"></div><svg id="reference-overlay" viewBox="0 0 640 480" aria-hidden="true"></svg></div>
+<aside><section><h1>Display-only red target</h1><p class="warn">No GRBL motion is available in this page.</p><pre id="state">starting</pre></section>
+<section id="reference-registration" class="registration"><h2>Reference board registration</h2><label><input id="registration-confirmation" type="checkbox"> I aligned P0, X+30 mm, and Y+30 mm, and secured the board.</label><button id="register-board" type="button" disabled>Register board</button></section>
+<section id="reference-status"><h2>Reference board</h2><pre id="reference-state">waiting for reference data</pre></section></aside></main>
 <script>
-const frame=document.getElementById('frame'), box=document.getElementById('box'), output=document.getElementById('state');
+const frame=document.getElementById('frame'), box=document.getElementById('box'), output=document.getElementById('state'), referenceOutput=document.getElementById('reference-state'), overlay=document.getElementById('reference-overlay'), confirmation=document.getElementById('registration-confirmation'), registerButton=document.getElementById('register-board');
+confirmation.addEventListener('change',()=>{registerButton.disabled=!confirmation.checked;});
+registerButton.addEventListener('click',async()=>{
+  try{const response=await fetch('/register-board',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({operator_confirmed:true})});const body=await response.json();if(!response.ok)throw new Error(body.error||'registration failed');confirmation.checked=false;registerButton.disabled=true;referenceOutput.textContent=JSON.stringify(body,null,2);}catch(error){referenceOutput.textContent='registration failed: '+error;}
+});
+function markerColor(reference){if(!reference)return '#9d1c21';if(reference.state==='ready')return '#16803c';if(reference.state==='collecting_reference_frames')return '#a46a00';return '#9d1c21';}
+function renderReference(reference){
+  referenceOutput.textContent=reference?JSON.stringify(reference,null,2):'reference mode is not active';overlay.innerHTML='';if(!reference)return;
+  const color=markerColor(reference), markers=reference.marker_corners_uv||{};
+  for(const corners of Object.values(markers)){if(!Array.isArray(corners)||corners.length!==4)continue;const points=corners.map(point=>point.u+','+point.v).join(' ');const polygon=document.createElementNS('http://www.w3.org/2000/svg','polygon');polygon.setAttribute('points',points);polygon.setAttribute('stroke',color);overlay.appendChild(polygon);}
+}
 async function refresh(){
   try{
     const response=await fetch('/state.json',{cache:'no-store'}); const state=await response.json();
-    output.textContent=JSON.stringify(state,null,2); frame.src='/frame.bmp?t='+Date.now();
+    output.textContent=JSON.stringify(state,null,2); renderReference(state.reference); frame.src='/frame.bmp?t='+Date.now();
     const b=state.target&&state.target.bbox_uvwh;
     if(b){box.style.display='block';box.style.left=b.u+'px';box.style.top=b.v+'px';box.style.width=b.width+'px';box.style.height=b.height+'px';}
     else{box.style.display='none';}

@@ -1,9 +1,18 @@
 import numpy as np
 import pytest
+from urllib.error import HTTPError
+from urllib.request import Request, urlopen
+from http.server import ThreadingHTTPServer
+from threading import Thread
 
 from vision.realsense.aruco_reference_board import default_layout
 from vision.realsense.live_red_target_dashboard import (
     ArucoReferenceTracker,
+    BoardRegistrationService,
+    DashboardError,
+    SnapshotStore,
+    _html_page,
+    _make_handler,
     reference_snapshot_state,
 )
 
@@ -83,3 +92,81 @@ def test_tracker_rejects_non_finite_marker_corners() -> None:
 
     assert status.state == "reference_lost"
     assert status.matrix_pixel_to_machine is None
+
+
+def test_registration_service_writes_display_only_record_and_unblocks_tracker(tmp_path) -> None:
+    tracker = ArucoReferenceTracker(layout=default_layout(), registration=None)
+    path = tmp_path / "registration.json"
+    service = BoardRegistrationService(
+        layout=default_layout(),
+        registration_path=path,
+        tracker=tracker,
+        now=lambda: "2026-07-28T12:00:00Z",
+    )
+
+    record = service.register({"operator_confirmed": True})
+
+    assert record["motion_permission"] == "display_only"
+    assert path.exists()
+    assert tracker.update(all_markers()).state == "collecting_reference_frames"
+
+
+def test_registration_service_rejects_any_payload_other_than_confirmation(tmp_path) -> None:
+    service = BoardRegistrationService(
+        layout=default_layout(),
+        registration_path=tmp_path / "registration.json",
+        tracker=ArucoReferenceTracker(layout=default_layout(), registration=None),
+        now=lambda: "2026-07-28T12:00:00Z",
+    )
+
+    with pytest.raises(DashboardError, match="operator_confirmed"):
+        service.register({"x": 10})
+
+
+def test_registration_endpoint_accepts_confirmation_and_rejects_axis_payload(tmp_path) -> None:
+    tracker = ArucoReferenceTracker(layout=default_layout(), registration=None)
+    service = BoardRegistrationService(
+        layout=default_layout(),
+        registration_path=tmp_path / "registration.json",
+        tracker=tracker,
+        now=lambda: "2026-07-28T12:00:00Z",
+    )
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(SnapshotStore(), service))
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base_url = f"http://127.0.0.1:{server.server_port}/register-board"
+    try:
+        response = urlopen(
+            Request(
+                base_url,
+                data=b'{"operator_confirmed":true}',
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+        )
+        assert response.status == 200
+        with pytest.raises(HTTPError) as error:
+            urlopen(
+                Request(
+                    base_url,
+                    data=b'{"x":10}',
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+            )
+        assert error.value.code == 400
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5.0)
+
+
+def test_wizard_has_registration_instruction_and_no_motion_controls() -> None:
+    page = _html_page()
+
+    assert "Reference board registration" in page
+    assert "I aligned P0, X+30 mm, and Y+30 mm" in page
+    assert "Register board" in page
+    assert "No GRBL motion is available in this page." in page
+    assert "G0" not in page
+    assert "$J" not in page
