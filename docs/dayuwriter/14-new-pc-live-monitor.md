@@ -37,7 +37,7 @@ python -m communication.dayuwriter.grbl_monitor --port DEMO
 
 ```text
 [ ] 能打开 DayuWriter 现场控制窗口
-[ ] 窗口顶部显示命令行传入的 COMx
+[ ] 窗口顶部显示命令行传入的端口名或 DEMO
 [ ] 可以阅读“现场控制、通信入门、坐标入门”三个页面
 [ ] 运行监视器测试通过
 ```
