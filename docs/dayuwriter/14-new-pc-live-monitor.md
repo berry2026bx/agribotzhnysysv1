@@ -6,6 +6,29 @@
 
 本手册不包含相机标定、目标检测或自动运动。新电脑的 COM 端口、驱动状态和物理 P0 必须重新确认，不能照搬旧电脑记录。
 
+## 最简单：不连接写字机，只展示界面
+
+这 4 步只用于给人展示界面、通信链路图和协议说明。**不需要连接写字机 USB，不需要安装 CH340 驱动，也不要接 12V 电源。**
+
+1. 在新电脑安装 Git for Windows 和 Miniconda。
+2. 打开“Anaconda Prompt”。
+3. 逐行粘贴下面命令：
+
+```bat
+cd /d %USERPROFILE%\Documents
+git clone --branch codex/dayuwriter-recovery-execution --single-branch https://github.com/berry2026bx/agribotzhnysysv1.git DayuWriter
+cd /d %USERPROFILE%\Documents\DayuWriter
+conda create -n dayuwriter-control python=3.11 pyserial pytest -y
+conda activate dayuwriter-control
+python -m communication.dayuwriter.grbl_monitor --port DEMO
+```
+
+4. 窗口打开后，只浏览“现场控制、通信入门、坐标入门”三个页面。**不要点击“连接并读取状态”。**
+
+`DEMO` 只是一个占位名字，表示“当前没有接真实写字机”。当前程序不会在打开窗口时访问串口；只有点击连接按钮才会尝试打开 `--port` 后面的名称。
+
+这种离线展示会显示完整的 Python → pySerial → USB-UART/CH340 → GRBL → STEP/DIR → A4988 → 电机链路图和协议说明，但不会生成伪造的“实时串口数据”。真实的 TX/RX、MPos 和坐标轨迹仍然只在连接真实设备后显示。
+
 ## 1. 先理解成功标准
 
 完成下列两级验证即可。
