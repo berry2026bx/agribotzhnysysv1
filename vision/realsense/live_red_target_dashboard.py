@@ -257,7 +257,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Display-only pixel-to-machine calibration artifact",
     )
     parser.add_argument("--port", type=int, default=8765, help="Loopback HTTP port")
-    parser.add_argument("--min-area-px", type=int, default=100, help="Minimum red target area")
+    parser.add_argument(
+        "--min-area-px",
+        type=int,
+        default=RedTargetConfig().min_area_px,
+        help="Minimum red target area",
+    )
     parser.add_argument("--warmup-frames", type=int, default=120, help="Frames discarded at startup")
     parser.add_argument("--depth-sample-radius", type=int, default=5, help="Depth search radius")
     return parser
