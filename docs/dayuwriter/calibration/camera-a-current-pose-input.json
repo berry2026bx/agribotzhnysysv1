@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "camera": {
+    "serial": "231122070403"
+  },
+  "mount_state": "Rigid oblique mount; do not move camera or machine frame relative to camera.",
+  "observation_method": "Manual pixel selection at the visible pen-tip apex after 120-frame camera warm-up. Pen tip remained at the same suspended Z height for all observations.",
+  "fit_points": [
+    {
+      "id": "p0",
+      "pixel_uv": {"u": 278.0, "v": 344.0},
+      "machine_xy_mm": {"x": 0.0, "y": 0.0}
+    },
+    {
+      "id": "x60_y0",
+      "pixel_uv": {"u": 336.0, "v": 372.0},
+      "machine_xy_mm": {"x": 60.0, "y": 0.0}
+    },
+    {
+      "id": "x60_y60",
+      "pixel_uv": {"u": 402.0, "v": 346.0},
+      "machine_xy_mm": {"x": 60.0, "y": 60.0}
+    },
+    {
+      "id": "x0_y60",
+      "pixel_uv": {"u": 342.0, "v": 319.0},
+      "machine_xy_mm": {"x": 0.0, "y": 60.0}
+    }
+  ],
+  "validation_points": [
+    {
+      "id": "x30_y30_held_out",
+      "pixel_uv": {"u": 338.0, "v": 345.0},
+      "machine_xy_mm": {"x": 30.0, "y": 30.0}
+    }
+  ],
+  "motion_permission": "display_only"
+}
