@@ -19,7 +19,7 @@ from .aruco_reference_board import (
 from .plane_mapping import CalibrationPoint, PlaneMappingError, fit_pixel_to_machine, predict_machine_xy
 
 
-COLOR_FRAME_SIZE = (640, 480)
+COLOR_FRAME_SIZE = (1280, 720)
 REQUIRED_COMPLETE_FRAMES = 12
 
 
@@ -45,7 +45,10 @@ def detect_marker_corners(rgb: np.ndarray, layout: ArucoBoardLayout) -> dict[int
         raise SessionCalibrationError("ArUco detection requires uint8 RGB pixels")
     dictionary = cv2.aruco.getPredefinedDictionary(getattr(cv2.aruco, ARUCO_DICTIONARY_NAME))
     grayscale = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
-    corners, identifiers, _ = cv2.aruco.detectMarkers(grayscale, dictionary)
+    if hasattr(cv2.aruco, "ArucoDetector"):
+        corners, identifiers, _ = cv2.aruco.ArucoDetector(dictionary).detectMarkers(grayscale)
+    else:
+        corners, identifiers, _ = cv2.aruco.detectMarkers(grayscale, dictionary)
     if identifiers is None:
         return {}
 
@@ -223,7 +226,7 @@ def _validate_serial(value: object) -> None:
 
 def _validate_frame_size(frame_size: object) -> None:
     if frame_size != COLOR_FRAME_SIZE:
-        raise SessionCalibrationError("ArUco reference sessions require a 640x480 RGB stream")
+        raise SessionCalibrationError("ArUco reference sessions require a 1280x720 RGB stream")
 
 
 def _validate_timestamp(value: object) -> None:

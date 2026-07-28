@@ -170,3 +170,11 @@ def test_wizard_has_registration_instruction_and_no_motion_controls() -> None:
     assert "No GRBL motion is available in this page." in page
     assert "G0" not in page
     assert "$J" not in page
+
+
+def test_dashboard_page_uses_high_resolution_coordinate_overlay() -> None:
+    page = _html_page()
+
+    assert 'viewBox="0 0 1280 720"' in page
+    assert "const DISPLAY_WIDTH=1280" in page
+    assert "const scale=stage.clientWidth/DISPLAY_WIDTH" in page

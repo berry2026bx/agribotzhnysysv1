@@ -36,7 +36,7 @@ def complete_frames() -> list[dict[int, np.ndarray]]:
 def test_record_uses_held_out_markers_and_is_display_only() -> None:
     result = build_aruco_session_record(
         serial="231122070403",
-        frame_size=(640, 480),
+        frame_size=(1280, 720),
         layout=default_layout(),
         complete_frames=complete_frames(),
         captured_at_utc="2026-07-28T12:00:00Z",
@@ -52,7 +52,7 @@ def test_record_rejects_fewer_than_12_complete_frames() -> None:
     with pytest.raises(SessionCalibrationError, match="12 complete frames"):
         build_aruco_session_record(
             serial="231122070403",
-            frame_size=(640, 480),
+            frame_size=(1280, 720),
             layout=default_layout(),
             complete_frames=complete_frames()[:11],
             captured_at_utc="2026-07-28T12:00:00Z",
@@ -67,18 +67,18 @@ def test_record_rejects_excessive_held_out_error() -> None:
     with pytest.raises(SessionCalibrationError, match="held-out"):
         build_aruco_session_record(
             serial="231122070403",
-            frame_size=(640, 480),
+            frame_size=(1280, 720),
             layout=default_layout(),
             complete_frames=frames,
             captured_at_utc="2026-07-28T12:00:00Z",
         )
 
 
-def test_record_rejects_changed_stream_resolution() -> None:
-    with pytest.raises(SessionCalibrationError, match="640x480"):
+def test_record_rejects_lower_resolution_stream() -> None:
+    with pytest.raises(SessionCalibrationError, match="1280x720"):
         build_aruco_session_record(
             serial="231122070403",
-            frame_size=(1280, 720),
+            frame_size=(640, 480),
             layout=default_layout(),
             complete_frames=complete_frames(),
             captured_at_utc="2026-07-28T12:00:00Z",

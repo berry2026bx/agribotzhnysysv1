@@ -40,8 +40,10 @@ from .red_target import (
 )
 
 
-COLOR_WIDTH = 640
-COLOR_HEIGHT = 480
+COLOR_WIDTH = 1280
+COLOR_HEIGHT = 720
+DEPTH_WIDTH = 640
+DEPTH_HEIGHT = 480
 FRAME_RATE = 30
 
 
@@ -391,7 +393,7 @@ def run_camera_worker(
         pipeline = rs.pipeline()
         config = rs.config()
         config.enable_device(calibration.serial)
-        config.enable_stream(rs.stream.depth, COLOR_WIDTH, COLOR_HEIGHT, rs.format.z16, FRAME_RATE)
+        config.enable_stream(rs.stream.depth, DEPTH_WIDTH, DEPTH_HEIGHT, rs.format.z16, FRAME_RATE)
         config.enable_stream(rs.stream.color, COLOR_WIDTH, COLOR_HEIGHT, rs.format.rgb8, FRAME_RATE)
         profile = pipeline.start(config)
     except Exception as exc:
@@ -650,23 +652,24 @@ def _html_page() -> str:
 <html lang="en"><head><meta charset="utf-8"><title>D435i Red Target</title>
 <style>
 body{margin:0;background:#f4f5f3;color:#17201a;font-family:Arial,sans-serif}
-main{display:grid;grid-template-columns:640px minmax(280px,1fr);gap:20px;padding:20px}
-#stage{position:relative;width:640px;height:480px;background:#171d18}
-#frame{display:block;width:640px;height:480px}
-#box{position:absolute;border:3px solid #d61f26;display:none;box-sizing:border-box}
-#reference-overlay{position:absolute;inset:0;width:640px;height:480px;pointer-events:none}
+  main{display:grid;grid-template-columns:minmax(0,960px) minmax(280px,440px);gap:20px;padding:20px}
+  #stage{position:relative;width:100%;max-width:960px;aspect-ratio:16/9;background:#171d18}
+  #frame{display:block;width:100%;height:100%}
+  #box{position:absolute;border:3px solid #d61f26;display:none;box-sizing:border-box}
+  #reference-overlay{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 #reference-overlay polygon{fill:none;stroke-width:2}
 aside{display:grid;align-content:start;gap:12px;max-width:440px}
 section{background:#fff;border:1px solid #ccd3ca;padding:16px}
 h1{font-size:20px;margin:0 0 16px}h2{font-size:16px;margin:0 0 10px}pre{white-space:pre-wrap;word-break:break-word;margin:0;font-size:14px}
-.warn{color:#9d1c21;font-weight:700}
-.registration{display:grid;gap:10px}.registration label{line-height:1.35}.registration button{justify-self:start}
-</style></head><body><main><div id="stage"><img id="frame" alt="Live D435i RGB"><div id="box"></div><svg id="reference-overlay" viewBox="0 0 640 480" aria-hidden="true"></svg></div>
+  .warn{color:#9d1c21;font-weight:700}
+  .registration{display:grid;gap:10px}.registration label{line-height:1.35}.registration button{justify-self:start}
+  @media(max-width:1400px){main{grid-template-columns:minmax(0,1fr)}aside{max-width:960px}}
+  </style></head><body><main><div id="stage"><img id="frame" alt="Live D435i RGB"><div id="box"></div><svg id="reference-overlay" viewBox="0 0 1280 720" aria-hidden="true"></svg></div>
 <aside><section><h1>Display-only red target</h1><p class="warn">No GRBL motion is available in this page.</p><pre id="state">starting</pre></section>
 <section id="reference-registration" class="registration"><h2>Reference board registration</h2><label><input id="registration-confirmation" type="checkbox"> I aligned P0, X+30 mm, and Y+30 mm, and secured the board.</label><button id="register-board" type="button" disabled>Register board</button></section>
 <section id="reference-status"><h2>Reference board</h2><pre id="reference-state">waiting for reference data</pre></section></aside></main>
 <script>
-const frame=document.getElementById('frame'), box=document.getElementById('box'), output=document.getElementById('state'), referenceOutput=document.getElementById('reference-state'), overlay=document.getElementById('reference-overlay'), confirmation=document.getElementById('registration-confirmation'), registerButton=document.getElementById('register-board');
+const DISPLAY_WIDTH=1280, frame=document.getElementById('frame'), stage=document.getElementById('stage'), box=document.getElementById('box'), output=document.getElementById('state'), referenceOutput=document.getElementById('reference-state'), overlay=document.getElementById('reference-overlay'), confirmation=document.getElementById('registration-confirmation'), registerButton=document.getElementById('register-board');
 confirmation.addEventListener('change',()=>{registerButton.disabled=!confirmation.checked;});
 registerButton.addEventListener('click',async()=>{
   try{const response=await fetch('/register-board',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({operator_confirmed:true})});const body=await response.json();if(!response.ok)throw new Error(body.error||'registration failed');confirmation.checked=false;registerButton.disabled=true;referenceOutput.textContent=JSON.stringify(body,null,2);}catch(error){referenceOutput.textContent='registration failed: '+error;}
@@ -682,7 +685,7 @@ async function refresh(){
     const response=await fetch('/state.json',{cache:'no-store'}); const state=await response.json();
     output.textContent=JSON.stringify(state,null,2); renderReference(state.reference); frame.src='/frame.bmp?t='+Date.now();
     const b=state.target&&state.target.bbox_uvwh;
-    if(b){box.style.display='block';box.style.left=b.u+'px';box.style.top=b.v+'px';box.style.width=b.width+'px';box.style.height=b.height+'px';}
+    if(b){const scale=stage.clientWidth/DISPLAY_WIDTH;box.style.display='block';box.style.left=(b.u*scale)+'px';box.style.top=(b.v*scale)+'px';box.style.width=(b.width*scale)+'px';box.style.height=(b.height*scale)+'px';}
     else{box.style.display='none';}
   }catch(error){output.textContent='dashboard refresh failed: '+error;}
 }
