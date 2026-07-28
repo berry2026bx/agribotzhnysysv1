@@ -205,13 +205,17 @@ class GrblController:
         remaining = deadline - self._clock()
         if remaining <= 0:
             raise ControllerError(timeout_message)
+        temporary_timeout = min(self.write_timeout_s, remaining)
+        timeout_was_lowered = temporary_timeout < self.write_timeout_s
         try:
-            serial_port.write_timeout = min(self.write_timeout_s, remaining)
+            if timeout_was_lowered:
+                serial_port.write_timeout = temporary_timeout
             try:
                 self._trace("TX", _payload_text(payload))
                 serial_port.write(payload)
             finally:
-                serial_port.write_timeout = self.write_timeout_s
+                if timeout_was_lowered:
+                    serial_port.write_timeout = self.write_timeout_s
         except Exception as exc:
             if self._clock() >= deadline:
                 raise ControllerError(timeout_message) from exc

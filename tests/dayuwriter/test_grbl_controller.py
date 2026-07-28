@@ -30,7 +30,9 @@ class FakeSerial:
         self.clock = clock
         self.kwargs = kwargs
         self.timeout = kwargs["timeout"]
-        self.write_timeout = kwargs["write_timeout"]
+        self._write_timeout = kwargs["write_timeout"]
+        self.fail_runtime_write_timeout_reconfigure = False
+        self.runtime_write_timeout_updates: list[float] = []
         self.writes: list[bytes] = []
         self.read_timeouts: list[float] = []
         self.write_timeouts: list[float] = []
@@ -42,6 +44,17 @@ class FakeSerial:
         self.block_writes = False
         self.fail_reset = False
         self.fail_close = False
+
+    @property
+    def write_timeout(self) -> float:
+        return self._write_timeout
+
+    @write_timeout.setter
+    def write_timeout(self, value: float) -> None:
+        if self.fail_runtime_write_timeout_reconfigure:
+            raise OSError("runtime serial timeout reconfiguration rejected")
+        self.runtime_write_timeout_updates.append(value)
+        self._write_timeout = value
 
     def write(self, data: bytes) -> int:
         self.writes.append(data)
@@ -152,6 +165,20 @@ def test_status_writes_realtime_question_and_parses_state() -> None:
 
     assert result == GrblStatus(raw="<Idle|MPos:0,0,0|FS:0,0>", state="Idle")
     assert factory.instances[0].writes == [b"?"]
+
+
+def test_status_does_not_reconfigure_an_equal_write_timeout() -> None:
+    controller, factory, _ = make_controller()
+    controller.open()
+    serial_port = factory.instances[0]
+    serial_port.fail_runtime_write_timeout_reconfigure = True
+    serial_port.reads.append(b"<Idle|MPos:0,0,0|FS:0,0>\r\n")
+
+    result = controller.status()
+
+    assert result == GrblStatus(raw="<Idle|MPos:0,0,0|FS:0,0>", state="Idle")
+    assert serial_port.writes == [b"?"]
+    assert serial_port.runtime_write_timeout_updates == []
 
 
 def test_status_times_out_after_one_realtime_query() -> None:
