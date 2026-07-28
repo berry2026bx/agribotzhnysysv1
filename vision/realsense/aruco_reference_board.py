@@ -13,7 +13,7 @@ import cv2
 
 A4_WIDTH_MM = 297.0
 A4_HEIGHT_MM = 210.0
-BOARD_REVISION = "a4-aruco-v2"
+BOARD_REVISION = "a4-aruco-v3"
 ARUCO_DICTIONARY_NAME = "DICT_4X4_50"
 FIT_MARKER_IDS = frozenset({0, 1, 3, 4})
 VALIDATION_MARKER_IDS = frozenset({2, 5})
@@ -99,9 +99,9 @@ class ArucoBoardLayout:
 
 
 def default_layout() -> ArucoBoardLayout:
-    """Return the fixed physical layout for revision ``a4-aruco-v2``."""
+    """Return the fixed physical layout for revision ``a4-aruco-v3``."""
     marker_size_mm = 40.0
-    marker_centers = ((25.0, 25.0), (272.0, 25.0), (272.0, 105.0), (272.0, 185.0), (25.0, 185.0), (25.0, 105.0))
+    marker_centers = ((32.0, 32.0), (265.0, 32.0), (265.0, 105.0), (265.0, 178.0), (32.0, 178.0), (32.0, 105.0))
     return ArucoBoardLayout(
         revision=BOARD_REVISION,
         width_mm=A4_WIDTH_MM,

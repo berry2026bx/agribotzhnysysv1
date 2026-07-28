@@ -19,7 +19,7 @@ def test_layout_has_exact_geometry_and_six_non_overlapping_markers() -> None:
     layout = default_layout()
 
     assert (layout.width_mm, layout.height_mm) == (A4_WIDTH_MM, A4_HEIGHT_MM)
-    assert BOARD_REVISION == "a4-aruco-v2"
+    assert BOARD_REVISION == "a4-aruco-v3"
     assert layout.revision == BOARD_REVISION
     assert [marker.identifier for marker in layout.markers] == [0, 1, 2, 3, 4, 5]
     assert layout.marker_size_mm == 40.0
@@ -34,10 +34,19 @@ def test_layout_has_exact_geometry_and_six_non_overlapping_markers() -> None:
                 assert not first.bounds.intersects(second.bounds)
 
 
+def test_layout_keeps_all_markers_inside_a_12_mm_print_safe_margin() -> None:
+    layout = default_layout()
+
+    assert min(marker.bounds.left_mm for marker in layout.markers) >= 12.0
+    assert min(marker.bounds.top_mm for marker in layout.markers) >= 12.0
+    assert max(marker.bounds.right_mm for marker in layout.markers) <= layout.width_mm - 12.0
+    assert max(marker.bounds.bottom_mm for marker in layout.markers) <= layout.height_mm - 12.0
+
+
 def test_svg_is_exact_a4_and_has_scale_bar_and_six_markers(tmp_path: Path) -> None:
     layout = default_layout()
     svg = render_a4_svg(layout)
-    output = tmp_path / "a4-aruco-v2.svg"
+    output = tmp_path / "a4-aruco-v3.svg"
 
     write_reference_board(output, layout)
 

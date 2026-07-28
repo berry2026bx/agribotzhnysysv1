@@ -13,14 +13,17 @@ its height or tilt, or P0 relative to the writer changes.
 
 ## Print And Mount
 
-1. Open [a4-aruco-v2.svg](../reference-board/a4-aruco-v2.svg) and print it at
+1. Open [a4-aruco-v3.svg](../reference-board/a4-aruco-v3.svg) and print it at
    `100%` / actual size. Do not select fit-to-page or scaling.
-2. Measure the printed 100 mm verification scale. Do not use the board unless
-   it measures 100 mm.
-3. Attach the sheet to a flat, rigid backing. Fix the backing on the same plane
+2. Choose A4, landscape, `100%` / actual size, and disable any printer-driver
+   fit-to-page or shrink-to-printable-area option. The markers have a 12 mm
+   print-safe margin, so the page itself must not be reduced to protect them.
+3. Measure the printed 100 mm verification scale. Do not use the board unless
+   it measures 99--101 mm with a ruler.
+4. Attach the sheet to a flat, rigid backing. Fix the backing on the same plane
    as the red target or paper. It must not sit below the machine, bend, or move
    independently of the writer.
-4. Keep all six numbered markers visible to camera A during operation.
+5. Keep all six numbered markers visible to camera A during operation.
 
 ## Register Board To P0
 
