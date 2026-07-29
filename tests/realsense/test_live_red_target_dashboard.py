@@ -227,3 +227,12 @@ def test_dashboard_page_draws_live_machine_xy_next_to_target_box() -> None:
     assert "targetLabel.textContent" in page
     assert "targetLabel.style.left" in page
     assert "targetLabel.style.top" in page
+
+
+def test_dashboard_page_styles_target_label_as_translucent_annotation() -> None:
+    page = _html_page()
+
+    assert '#target-label{position:absolute' in page
+    assert 'background:rgba(255,255,255,.88)' in page
+    assert 'border:1px solid #d61f26' in page
+    assert 'color:#303833' in page

@@ -767,7 +767,7 @@ body{margin:0;background:#f4f5f3;color:#17201a;font-family:Arial,sans-serif}
   #stage{position:relative;width:100%;max-width:960px;aspect-ratio:16/9;background:#171d18}
   #frame{display:block;width:100%;height:100%}
   #box{position:absolute;border:3px solid #d61f26;display:none;box-sizing:border-box}
-  #target-label{position:absolute;display:none;z-index:2;transform:translate(8px,-6px);background:#17201a;color:#fff;padding:4px 6px;font-size:14px;font-weight:700;line-height:1.2;font-variant-numeric:tabular-nums;white-space:nowrap;pointer-events:none}
+  #target-label{position:absolute;display:none;z-index:2;transform:translate(8px,-6px);background:rgba(255,255,255,.88);border:1px solid #d61f26;box-shadow:0 2px 6px rgba(23,32,26,.2);color:#303833;padding:4px 6px;font-size:14px;font-weight:700;line-height:1.2;font-variant-numeric:tabular-nums;white-space:nowrap;pointer-events:none}
   #reference-overlay{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 #reference-overlay polygon{fill:none;stroke-width:2}
 aside{display:grid;align-content:start;gap:12px;max-width:440px}
