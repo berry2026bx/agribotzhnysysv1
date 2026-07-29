@@ -43,6 +43,25 @@ def test_build_follow_proposal_ignores_sub_millimetre_visual_jitter() -> None:
     assert proposal.commands == ()
 
 
+def test_continuous_session_moves_from_last_commanded_target_without_returning_to_p0() -> None:
+    session = visual_follow.ContinuousFollowSession(FollowBaseline(1.927, 0.169))
+
+    assert session.observe(LiveTarget(6.927, 0.169)) is None
+    assert session.observe(LiveTarget(6.927, 0.169)) is None
+    first = session.observe(LiveTarget(6.927, 0.169))
+    assert first is not None
+    first_target, first_proposal = first
+    assert first_proposal.delta_x_mm == pytest.approx(5.0)
+    session.mark_executed(first_target, first_proposal)
+
+    assert session.observe(LiveTarget(10.927, 0.169)) is None
+    assert session.observe(LiveTarget(10.927, 0.169)) is None
+    second = session.observe(LiveTarget(10.927, 0.169))
+    assert second is not None
+    _, second_proposal = second
+    assert second_proposal.delta_x_mm == pytest.approx(4.0)
+
+
 def test_build_target_move_proposal_splits_xy_then_appends_z_drop() -> None:
     proposal = visual_follow.build_target_move_proposal(
         FollowBaseline(1.927, 0.169),
@@ -112,6 +131,31 @@ def test_execute_follow_uses_one_persistent_controller_for_x_then_y() -> None:
     assert controller.jog_calls == [JogCommand("X", 2.0, 50.0), JogCommand("Y", -3.0, 50.0)]
 
 
+def test_execute_continuous_follow_keeps_one_controller_for_two_target_changes() -> None:
+    controller = FakeController()
+    opened_ports: list[str] = []
+    snapshots = iter(
+        [
+            *[ready_payload(x=6.927, y=0.169) for _ in range(3)],
+            *[ready_payload(x=10.927, y=0.169) for _ in range(3)],
+        ]
+    )
+
+    results = visual_follow.execute_continuous_follow(
+        "COM4",
+        FollowBaseline(1.927, 0.169),
+        max_moves=2,
+        max_observations=6,
+        fetcher=lambda _url: next(snapshots),
+        controller_factory=lambda port: (opened_ports.append(port) or controller),
+        sleeper=lambda _seconds: None,
+    )
+
+    assert len(results) == 2
+    assert opened_ports == ["COM4"]
+    assert controller.jog_calls == [JogCommand("X", 5.0, 50.0), JogCommand("X", 4.0, 50.0)]
+
+
 def args(**overrides) -> Namespace:
     values = {
         "dashboard_url": "http://127.0.0.1:8765/state.json",
@@ -123,6 +167,9 @@ def args(**overrides) -> Namespace:
         "physical_preflight": False,
         "z_drop_mm": 0.0,
         "z_drop_preflight": False,
+        "continuous": False,
+        "max_moves": 2,
+        "max_observations": 6,
     }
     values.update(overrides)
     return Namespace(**values)
@@ -161,6 +208,23 @@ def test_execute_rejects_z_drop_without_separate_z_preflight(capsys) -> None:
 
     assert factory_calls == []
     assert "--z-drop-preflight" in capsys.readouterr().err
+
+
+def test_continuous_mode_rejects_z_drop_even_with_z_preflight(capsys) -> None:
+    assert visual_follow.run(
+        args(
+            continuous=True,
+            execute=True,
+            port="COM4",
+            physical_preflight=True,
+            z_drop_mm=1.0,
+            z_drop_preflight=True,
+        ),
+        fetcher=lambda _url: ready_payload(x=6.927, y=0.169),
+        controller_factory=lambda _port: FakeController(),
+    ) == 2
+
+    assert "continuous follow keeps Z suspended" in capsys.readouterr().err
 
 
 def test_execute_target_move_uses_one_controller_and_runs_z_last() -> None:

@@ -89,3 +89,38 @@ rejected unless `--z-drop-preflight` is present. The command remains bounded:
 per-axis target delta at most 30 mm, every X/Y segment at most 5 mm, and Z
 drop at most 1 mm. Do not run it unattended or assume that `MPos` is a
 physical encoder measurement.
+
+## Finite XY Follow Session
+
+This mode starts only after the pen has been physically aligned to P0. It
+then retains the last successfully commanded XY target, so a subsequent stable
+red-square change is an incremental correction rather than another P0-relative
+move. It does not lower Z.
+
+The session accepts only a `ready` dashboard with all reference checks intact.
+It requires three target samples whose X and Y spread is at most 1 mm. It
+stops on a camera/reference/target failure or when a target is more than
+30 mm from the captured P0 visual baseline on either axis. A first session is
+limited to three successful corrections and 120 observations (about 30 s).
+
+Before each real session, physically confirm that the pen is at P0, 12 V is
+connected, the pen tip is suspended, the entire XY path is clear, and the
+camera, A4 board, and paper have not moved. A manual push, power/USB loss,
+GRBL reset, serial error, or suspected lost step invalidates the assumed pose;
+stop and physically return to P0 before another session.
+
+```powershell
+& "C:\Users\Administrator\.conda\envs\dayuwriter-control\python.exe" `
+  -m communication.dayuwriter.visual_follow `
+  --port COM4 `
+  --baseline-x 1.927 `
+  --baseline-y 0.169 `
+  --continuous `
+  --max-moves 3 `
+  --max-observations 120 `
+  --execute `
+  --physical-preflight
+```
+
+The process must not be used for arbitrary targets outside the initial
+plus-or-minus 30 mm P0 envelope. Cut 12 V for a physical emergency stop.

@@ -27,6 +27,8 @@ from .workspace import split_delta
 MIN_FOLLOW_DELTA_MM = 1.0
 MAX_INITIAL_DEMO_DELTA_MM = 30.0
 MAX_Z_DROP_MM = 1.0
+REQUIRED_STABLE_TARGET_SAMPLES = 3
+MAX_STABLE_TARGET_SPREAD_MM = 1.0
 
 
 class VisualFollowError(ValueError):
@@ -56,6 +58,77 @@ class FollowProposal:
     delta_x_mm: float
     delta_y_mm: float
     commands: tuple[JogCommand, ...]
+
+
+class ContinuousFollowSession:
+    """Build XY corrections from the last successfully commanded target."""
+
+    def __init__(self, p0_baseline: FollowBaseline, *, feed_mm_min: float = 50.0) -> None:
+        _validate_point("P0 baseline", p0_baseline.x_mm, p0_baseline.y_mm)
+        self._p0_baseline = p0_baseline
+        self._commanded_position = p0_baseline
+        self._recent_targets: list[LiveTarget] = []
+        self._feed_mm_min = feed_mm_min
+
+    def observe(self, target: LiveTarget) -> tuple[LiveTarget, FollowProposal] | None:
+        """Return a proposal only after three tight, ready target samples."""
+
+        _validate_point("target", target.x_mm, target.y_mm)
+        self._recent_targets.append(target)
+        if len(self._recent_targets) > REQUIRED_STABLE_TARGET_SAMPLES:
+            self._recent_targets.pop(0)
+        if len(self._recent_targets) < REQUIRED_STABLE_TARGET_SAMPLES:
+            return None
+        if not _targets_are_stable(self._recent_targets):
+            return None
+        stable_target = _mean_target(self._recent_targets)
+        _validate_target_within_p0_envelope(self._p0_baseline, stable_target)
+        proposal = build_target_move_proposal(
+            self._commanded_position,
+            stable_target,
+            feed_mm_min=self._feed_mm_min,
+        )
+        if not proposal.commands:
+            return None
+        return stable_target, proposal
+
+    def mark_executed(self, target: LiveTarget, proposal: FollowProposal) -> None:
+        """Advance only axes that the controller actually jogged."""
+
+        moved_axes = {command.axis for command in proposal.commands}
+        self._commanded_position = FollowBaseline(
+            target.x_mm if "X" in moved_axes else self._commanded_position.x_mm,
+            target.y_mm if "Y" in moved_axes else self._commanded_position.y_mm,
+        )
+
+
+def _targets_are_stable(targets: Sequence[LiveTarget]) -> bool:
+    return (
+        max(target.x_mm for target in targets) - min(target.x_mm for target in targets)
+        <= MAX_STABLE_TARGET_SPREAD_MM
+        and max(target.y_mm for target in targets) - min(target.y_mm for target in targets)
+        <= MAX_STABLE_TARGET_SPREAD_MM
+    )
+
+
+def _mean_target(targets: Sequence[LiveTarget]) -> LiveTarget:
+    count = len(targets)
+    return LiveTarget(
+        sum(target.x_mm for target in targets) / count,
+        sum(target.y_mm for target in targets) / count,
+    )
+
+
+def _validate_target_within_p0_envelope(
+    p0_baseline: FollowBaseline,
+    target: LiveTarget,
+) -> None:
+    delta_x_mm = target.x_mm - p0_baseline.x_mm
+    delta_y_mm = target.y_mm - p0_baseline.y_mm
+    if abs(delta_x_mm) > MAX_INITIAL_DEMO_DELTA_MM or abs(delta_y_mm) > MAX_INITIAL_DEMO_DELTA_MM:
+        raise VisualFollowError(
+            f"visual target must be within +/-{MAX_INITIAL_DEMO_DELTA_MM:g} mm of P0 per axis"
+        )
 
 
 def parse_live_target(payload: Mapping[str, Any]) -> LiveTarget:
@@ -106,10 +179,7 @@ def build_target_move_proposal(
     _validate_point("target", target.x_mm, target.y_mm)
     delta_x_mm = target.x_mm - baseline.x_mm
     delta_y_mm = target.y_mm - baseline.y_mm
-    if abs(delta_x_mm) > MAX_INITIAL_DEMO_DELTA_MM or abs(delta_y_mm) > MAX_INITIAL_DEMO_DELTA_MM:
-        raise VisualFollowError(
-            f"initial visual target must be within +/-{MAX_INITIAL_DEMO_DELTA_MM:g} mm per axis"
-        )
+    _validate_target_within_p0_envelope(baseline, target)
 
     try:
         z_drop_mm = float(z_drop_mm)
@@ -180,6 +250,44 @@ def execute_follow(
         return tuple(controller.jog(command) for command in proposal.commands)
 
 
+def execute_continuous_follow(
+    port: str,
+    p0_baseline: FollowBaseline,
+    *,
+    max_moves: int,
+    max_observations: int,
+    dashboard_url: str = "http://127.0.0.1:8765/state.json",
+    feed_mm_min: float = 50.0,
+    fetcher: Callable[[str], Mapping[str, Any]] = fetch_dashboard_state,
+    controller_factory: Callable[[str], GrblController] = GrblController,
+    sleeper: Callable[[float], None] = time.sleep,
+) -> tuple[Any, ...]:
+    """Follow stable target changes for a finite, explicitly bounded session."""
+
+    if not 1 <= max_moves <= 10:
+        raise VisualFollowError("continuous follow max_moves must be within [1, 10]")
+    if not 3 <= max_observations <= 240:
+        raise VisualFollowError("continuous follow max_observations must be within [3, 240]")
+    session = ContinuousFollowSession(p0_baseline, feed_mm_min=feed_mm_min)
+    results: list[Any] = []
+    completed_moves = 0
+    with controller_factory(port) as controller:
+        for observation_index in range(max_observations):
+            target = parse_live_target(fetcher(dashboard_url))
+            candidate = session.observe(target)
+            if candidate is not None:
+                stable_target, proposal = candidate
+                for command in proposal.commands:
+                    results.append(controller.jog(command))
+                session.mark_executed(stable_target, proposal)
+                completed_moves += 1
+                if completed_moves >= max_moves:
+                    return tuple(results)
+            if observation_index + 1 < max_observations:
+                sleeper(0.25)
+    return tuple(results)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Preview or explicitly execute a bounded red-target XY follow proposal."
@@ -210,6 +318,23 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Acknowledge at least 1 mm clear downward Z space for --z-drop-mm",
     )
+    parser.add_argument(
+        "--continuous",
+        action="store_true",
+        help="Follow stable red-target changes in XY only for a finite session",
+    )
+    parser.add_argument(
+        "--max-moves",
+        type=int,
+        default=3,
+        help="Maximum successful XY corrections in continuous mode; maximum 10",
+    )
+    parser.add_argument(
+        "--max-observations",
+        type=int,
+        default=120,
+        help="Maximum 250 ms target observations in continuous mode; maximum 240",
+    )
     return parser
 
 
@@ -222,9 +347,17 @@ def run(
     """Print the visual proposal; serial is opened only for explicit execution."""
 
     try:
-        target = fetch_ready_live_target(args.dashboard_url, fetcher=fetcher)
         baseline = FollowBaseline(args.baseline_x, args.baseline_y)
         z_drop_mm = getattr(args, "z_drop_mm", 0.0)
+        if getattr(args, "continuous", False):
+            return _run_continuous_follow(
+                args,
+                baseline,
+                z_drop_mm=z_drop_mm,
+                fetcher=fetcher,
+                controller_factory=controller_factory,
+            )
+        target = fetch_ready_live_target(args.dashboard_url, fetcher=fetcher)
         proposal = build_target_move_proposal(
             baseline,
             target,
@@ -245,6 +378,41 @@ def run(
     except (VisualFollowError, ControllerError, OSError, ValueError) as exc:
         print(f"Visual follow failed: {exc}", file=sys.stderr)
         return 2
+    for result in results:
+        print(f"accepted: {result.acceptance}")
+        print(f"final: {result.final_status.raw}")
+    return 0
+
+
+def _run_continuous_follow(
+    args: Any,
+    baseline: FollowBaseline,
+    *,
+    z_drop_mm: float,
+    fetcher: Callable[[str], Mapping[str, Any]],
+    controller_factory: Callable[[str], GrblController],
+) -> int:
+    if float(z_drop_mm) != 0.0:
+        raise VisualFollowError("continuous follow keeps Z suspended; --z-drop-mm must be 0")
+    if not args.execute:
+        raise VisualFollowError("continuous follow requires --execute")
+    if not args.physical_preflight:
+        raise VisualFollowError("continuous follow requires --physical-preflight")
+    if not args.port:
+        raise VisualFollowError("continuous follow requires --port COMx")
+    results = execute_continuous_follow(
+        args.port,
+        baseline,
+        max_moves=getattr(args, "max_moves", 3),
+        max_observations=getattr(args, "max_observations", 120),
+        dashboard_url=args.dashboard_url,
+        feed_mm_min=args.feed,
+        fetcher=fetcher,
+        controller_factory=controller_factory,
+    )
+    if not results:
+        print("continuous follow ended without a stable target correction")
+        return 0
     for result in results:
         print(f"accepted: {result.acceptance}")
         print(f"final: {result.final_status.raw}")
