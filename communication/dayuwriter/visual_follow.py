@@ -25,7 +25,7 @@ from .workspace import split_delta
 
 
 MIN_FOLLOW_DELTA_MM = 1.0
-MAX_INITIAL_DEMO_DELTA_MM = 30.0
+MAX_P0_FOLLOW_OFFSET_MM = 60.0
 MAX_Z_DROP_MM = 1.0
 REQUIRED_STABLE_TARGET_SAMPLES = 3
 MAX_STABLE_TARGET_SPREAD_MM = 1.0
@@ -125,9 +125,9 @@ def _validate_target_within_p0_envelope(
 ) -> None:
     delta_x_mm = target.x_mm - p0_baseline.x_mm
     delta_y_mm = target.y_mm - p0_baseline.y_mm
-    if abs(delta_x_mm) > MAX_INITIAL_DEMO_DELTA_MM or abs(delta_y_mm) > MAX_INITIAL_DEMO_DELTA_MM:
+    if abs(delta_x_mm) > MAX_P0_FOLLOW_OFFSET_MM or abs(delta_y_mm) > MAX_P0_FOLLOW_OFFSET_MM:
         raise VisualFollowError(
-            f"visual target must be within +/-{MAX_INITIAL_DEMO_DELTA_MM:g} mm of P0 per axis"
+            f"visual target must be within +/-{MAX_P0_FOLLOW_OFFSET_MM:g} mm of P0 per axis"
         )
 
 

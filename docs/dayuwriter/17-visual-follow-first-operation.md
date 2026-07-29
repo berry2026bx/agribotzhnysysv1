@@ -25,7 +25,7 @@ With the red square at another physical location, run this from the repository r
 The command prints the target, baseline, delta, and exact bounded GRBL jog strings. It must end with `preview only; no serial port opened`.
 
 The default 1 mm deadband suppresses visual jitter. The initial supervised
-demonstration accepts a target within plus or minus 30 mm of P0 on either axis.
+demonstration accepts a target within plus or minus 60 mm of P0 on either axis.
 Each remaining X or Y displacement is automatically split into segments no
 greater than 5 mm at 50 mm/min. This is rough supervised positioning: the
 current A4 plane mapping has about 1--2 mm residual error.
@@ -63,7 +63,7 @@ and only then issues one `Z+1 mm` jog at 50 mm/min. A controller error stops
 the sequence before later segments and before Z.
 
 Before the command, the operator must physically return the pen to P0, place a
-flat red square within 30 mm of P0 in either direction, keep the pen suspended,
+flat red square within 60 mm of P0 in either direction, keep the pen suspended,
 confirm the full XY path is clear, and confirm at least 1 mm of clear downward
 space. The D435i, A4 reference board, and paper must not have moved since the
 dashboard reached `ready`.
@@ -100,7 +100,7 @@ move. It does not lower Z.
 The session accepts only a `ready` dashboard with all reference checks intact.
 It requires three target samples whose X and Y spread is at most 1 mm. It
 stops on a camera/reference/target failure or when a target is more than
-30 mm from the captured P0 visual baseline on either axis. A first session is
+60 mm from the captured P0 visual baseline on either axis. A first session is
 limited to three successful corrections and 120 observations (about 30 s).
 
 Before each real session, physically confirm that the pen is at P0, 12 V is
@@ -123,4 +123,4 @@ stop and physically return to P0 before another session.
 ```
 
 The process must not be used for arbitrary targets outside the initial
-plus-or-minus 30 mm P0 envelope. Cut 12 V for a physical emergency stop.
+plus-or-minus 60 mm P0 envelope. Cut 12 V for a physical emergency stop.

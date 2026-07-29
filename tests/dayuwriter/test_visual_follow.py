@@ -81,15 +81,25 @@ def test_build_target_move_proposal_splits_xy_then_appends_z_drop() -> None:
     )
 
 
-@pytest.mark.parametrize("target", [LiveTarget(32.0, 0.169), LiveTarget(1.927, -30.0)])
+@pytest.mark.parametrize("target", [LiveTarget(62.0, 0.169), LiveTarget(1.927, -61.0)])
 def test_build_target_move_proposal_rejects_target_outside_initial_demo_envelope(
     target: LiveTarget,
 ) -> None:
-    with pytest.raises(visual_follow.VisualFollowError, match="30 mm"):
+    with pytest.raises(visual_follow.VisualFollowError, match="60 mm"):
         visual_follow.build_target_move_proposal(
             FollowBaseline(1.927, 0.169),
             target,
         )
+
+
+def test_build_target_move_proposal_accepts_target_within_sixty_mm_of_p0() -> None:
+    proposal = visual_follow.build_target_move_proposal(
+        FollowBaseline(1.927, 0.169),
+        LiveTarget(46.927, 0.169),
+    )
+
+    assert proposal.delta_x_mm == pytest.approx(45.0)
+    assert all(abs(command.distance_mm) <= 5.0 for command in proposal.commands)
 
 
 def test_build_target_move_proposal_omits_z_when_no_drop_is_requested() -> None:
