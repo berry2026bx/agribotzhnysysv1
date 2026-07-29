@@ -1,10 +1,12 @@
 # DayuWriter 写字机恢复与视觉改造文档
 
-这套文档记录 2026-07-26 在 Windows 11 新电脑上恢复 DayuWriter/CoreXY 写字机、建立 Python 控制、完成基础标定并准备接入 Intel RealSense D435i 的全过程。
+这套文档记录从 2026-07-26 起在 Windows 11 上恢复 DayuWriter/CoreXY 写字机、建立 Python 控制、完成基础标定，并最终完成 D435i A 的纸面红方块显示与一次受监督的有界 XY/Z 演示。
 
 文档采用证据优先原则：现场观察、设备输出和代码测试属于已验证事实；历史对话中的端口、固件和参数只作为线索，不直接当作当前事实。
 
-## 当前结论
+## 初始恢复阶段结论
+
+> 下列项目是 2026-07-26 恢复阶段的基线。后续相机、参考板和视觉跟随结果以 [15](15-camera-a-a4-aruco-high-resolution-live-validation.md)、[16](16-camera-a-p0-red-square-live-validation.md)、[17](17-visual-follow-first-operation.md)、[19](19-calibration-process-and-lessons.md) 和 [20](20-project-end-to-end-record.md) 为准。
 
 - Windows 当前识别设备为 `USB-SERIAL CH340 (COM3)`。
 - 当前实际固件为 `Grbl 1.1f kvenjoy.com.20170131`，不是历史记录中的 1.1h。
@@ -16,7 +18,7 @@
 - 当前无自动回零；启动控制台前必须把机构物理对准 P0。
 - 当前 `Z+` 向下、`Z-` 向上，Z 轴尚未建立软件边界。
 - 状态持续显示 `Pn:P`，表示探针输入有效；原因尚未最终确认。
-- D435i 尚未接入和标定，视觉坐标不能直接用于运动。
+- 该阶段 D435i 尚未接入和标定；后续记录已完成显示标定及一次受监督的受限运动验证，但没有形成无人值守视觉作业能力。
 
 ## 推荐阅读顺序
 
@@ -28,6 +30,9 @@
 6. [06-D435i 视觉改造路线](06-d435i-vision-roadmap.md)
 7. [07-新电脑部署与现场迁移](07-new-laptop-migration.md)
 8. [14-全新电脑运行可视化界面](14-new-pc-live-monitor.md)
+9. [19-标定过程与经验](19-calibration-process-and-lessons.md)
+10. [20-项目全流程记录](20-project-end-to-end-record.md)
+11. [21-全新电脑部署指南](21-new-computer-deployment.md)
 
 ## 原始证据
 
