@@ -201,3 +201,20 @@ def test_dashboard_page_uses_high_resolution_coordinate_overlay() -> None:
     assert 'viewBox="0 0 1280 720"' in page
     assert "const DISPLAY_WIDTH=1280" in page
     assert "const scale=stage.clientWidth/DISPLAY_WIDTH" in page
+
+
+def test_dashboard_page_has_prominent_live_machine_xy_readout() -> None:
+    page = _html_page()
+
+    assert 'id="target-coordinate"' in page
+    assert 'id="target-x"' in page
+    assert 'id="target-y"' in page
+    assert 'id="target-coordinate-state"' in page
+    assert "function renderTargetCoordinate(state)" in page
+    assert "state.machine_xy_mm" in page
+
+
+def test_dashboard_page_places_live_coordinates_before_debug_state() -> None:
+    page = _html_page()
+
+    assert page.index('id="target-coordinate"') < page.index('id="state"')

@@ -773,14 +773,16 @@ aside{display:grid;align-content:start;gap:12px;max-width:440px}
 section{background:#fff;border:1px solid #ccd3ca;padding:16px}
 h1{font-size:20px;margin:0 0 16px}h2{font-size:16px;margin:0 0 10px}pre{white-space:pre-wrap;word-break:break-word;margin:0;font-size:14px}
   .warn{color:#9d1c21;font-weight:700}
+  .coordinate-readout{border-left:4px solid #16803c}.coordinate-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.coordinate-label{display:block;color:#526056;font-size:13px}.coordinate-value{display:block;font-size:28px;line-height:1.15;font-variant-numeric:tabular-nums}.coordinate-unit{color:#526056;font-size:13px}.coordinate-state{margin:12px 0 0;color:#526056;font-size:13px}.coordinate-readout[data-state="unavailable"]{border-left-color:#9d1c21}
   .registration{display:grid;gap:10px}.registration label{line-height:1.35}.registration button{justify-self:start}
   @media(max-width:1400px){main{grid-template-columns:minmax(0,1fr)}aside{max-width:960px}}
   </style></head><body><main><div id="stage"><img id="frame" alt="Live D435i RGB"><div id="box"></div><svg id="reference-overlay" viewBox="0 0 1280 720" aria-hidden="true"></svg></div>
-<aside><section><h1>Display-only red target</h1><p class="warn">No GRBL motion is available in this page.</p><pre id="state">starting</pre></section>
+<aside><section id="target-coordinate" class="coordinate-readout" data-state="unavailable" aria-live="polite"><h2>目标相对 P0</h2><div class="coordinate-grid"><div><span class="coordinate-label">X</span><strong id="target-x" class="coordinate-value">--</strong><span class="coordinate-unit">mm</span></div><div><span class="coordinate-label">Y</span><strong id="target-y" class="coordinate-value">--</strong><span class="coordinate-unit">mm</span></div></div><p id="target-coordinate-state" class="coordinate-state">实时红方块坐标</p></section>
+<section><h1>Display-only red target</h1><p class="warn">No GRBL motion is available in this page.</p><pre id="state">starting</pre></section>
 <section id="reference-registration" class="registration"><h2>Reference board registration</h2><label><input id="registration-confirmation" type="checkbox"> I aligned P0, X+30 mm, and Y+30 mm, and secured the board.</label><button id="register-board" type="button" disabled>Register board</button></section>
 <section id="reference-status"><h2>Reference board</h2><pre id="reference-state">waiting for reference data</pre></section></aside></main>
 <script>
-const DISPLAY_WIDTH=1280, frame=document.getElementById('frame'), stage=document.getElementById('stage'), box=document.getElementById('box'), output=document.getElementById('state'), referenceOutput=document.getElementById('reference-state'), overlay=document.getElementById('reference-overlay'), confirmation=document.getElementById('registration-confirmation'), registerButton=document.getElementById('register-board');
+const DISPLAY_WIDTH=1280, frame=document.getElementById('frame'), stage=document.getElementById('stage'), box=document.getElementById('box'), output=document.getElementById('state'), referenceOutput=document.getElementById('reference-state'), overlay=document.getElementById('reference-overlay'), confirmation=document.getElementById('registration-confirmation'), registerButton=document.getElementById('register-board'), coordinateCard=document.getElementById('target-coordinate'), coordinateX=document.getElementById('target-x'), coordinateY=document.getElementById('target-y'), coordinateState=document.getElementById('target-coordinate-state');
 confirmation.addEventListener('change',()=>{registerButton.disabled=!confirmation.checked;});
 registerButton.addEventListener('click',async()=>{
   try{const response=await fetch('/register-board',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({operator_confirmed:true})});const body=await response.json();if(!response.ok)throw new Error(body.error||'registration failed');confirmation.checked=false;registerButton.disabled=true;referenceOutput.textContent=JSON.stringify(body,null,2);}catch(error){referenceOutput.textContent='registration failed: '+error;}
@@ -791,14 +793,20 @@ function renderReference(reference){
   const color=markerColor(reference), markers=reference.marker_corners_uv||{};
   for(const corners of Object.values(markers)){if(!Array.isArray(corners)||corners.length!==4)continue;const points=corners.map(point=>point.u+','+point.v).join(' ');const polygon=document.createElementNS('http://www.w3.org/2000/svg','polygon');polygon.setAttribute('points',points);polygon.setAttribute('stroke',color);overlay.appendChild(polygon);}
 }
+function renderTargetCoordinate(state){
+  const coordinate=state.machine_xy_mm, hasCoordinate=state.state==='ready'&&state.mapping_state==='available'&&coordinate&&Number.isFinite(Number(coordinate.x))&&Number.isFinite(Number(coordinate.y));
+  if(hasCoordinate){coordinateX.textContent=formatCoordinate(coordinate.x);coordinateY.textContent=formatCoordinate(coordinate.y);coordinateState.textContent='实时红方块坐标';coordinateCard.dataset.state='ready';return;}
+  coordinateX.textContent='--';coordinateY.textContent='--';coordinateState.textContent=state.state==='no_target'?'未检测到有效红方块':'坐标不可用';coordinateCard.dataset.state='unavailable';
+}
+function formatCoordinate(value){const number=Number(value);return (number>=0?'+':'')+number.toFixed(2);}
 async function refresh(){
   try{
     const response=await fetch('/state.json',{cache:'no-store'}); const state=await response.json();
-    output.textContent=JSON.stringify(state,null,2); renderReference(state.reference); frame.src='/frame.bmp?t='+Date.now();
+    output.textContent=JSON.stringify(state,null,2); renderTargetCoordinate(state); renderReference(state.reference); frame.src='/frame.bmp?t='+Date.now();
     const b=state.target&&state.target.bbox_uvwh;
     if(b){const scale=stage.clientWidth/DISPLAY_WIDTH;box.style.display='block';box.style.left=(b.u*scale)+'px';box.style.top=(b.v*scale)+'px';box.style.width=(b.width*scale)+'px';box.style.height=(b.height*scale)+'px';}
     else{box.style.display='none';}
-  }catch(error){output.textContent='dashboard refresh failed: '+error;}
+  }catch(error){renderTargetCoordinate({});output.textContent='dashboard refresh failed: '+error;}
 }
 refresh();setInterval(refresh,250);
 </script></body></html>"""
