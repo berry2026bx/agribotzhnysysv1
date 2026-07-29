@@ -218,3 +218,12 @@ def test_dashboard_page_places_live_coordinates_before_debug_state() -> None:
     page = _html_page()
 
     assert page.index('id="target-coordinate"') < page.index('id="state"')
+
+
+def test_dashboard_page_draws_live_machine_xy_next_to_target_box() -> None:
+    page = _html_page()
+
+    assert 'id="target-label"' in page
+    assert "targetLabel.textContent" in page
+    assert "targetLabel.style.left" in page
+    assert "targetLabel.style.top" in page
