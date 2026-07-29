@@ -1,4 +1,4 @@
-# First Bounded Visual Follow Operation
+# Bounded Visual Target Move With Optional Z Drop
 
 The D435i dashboard and GRBL control remain separate. The dashboard at `http://127.0.0.1:8765/` has no serial access. The command below reads its `state.json` and is preview-only unless both execution flags are present.
 
@@ -24,7 +24,11 @@ With the red square at another physical location, run this from the repository r
 
 The command prints the target, baseline, delta, and exact bounded GRBL jog strings. It must end with `preview only; no serial port opened`.
 
-The default 1 mm deadband suppresses visual jitter. Each remaining X or Y segment is constrained to 5 mm or less and 50 mm/min. A larger target delta is rejected; it is not split or executed.
+The default 1 mm deadband suppresses visual jitter. The initial supervised
+demonstration accepts a target within plus or minus 30 mm of P0 on either axis.
+Each remaining X or Y displacement is automatically split into segments no
+greater than 5 mm at 50 mm/min. This is rough supervised positioning: the
+current A4 plane mapping has about 1--2 mm residual error.
 
 ## First Physical Test
 
@@ -49,3 +53,39 @@ Only after confirming all of the following at action time may the explicit execu
 ```
 
 Successful execution requires command acceptance (`ok`), final `Idle`, and direct observation of the pen motion. `ok` alone is not motion proof. Cut 12 V for a physical emergency stop.
+
+## Move To Target, Then Lower Z Slightly
+
+This is a positioning demonstration, not a grab: no gripper is installed.
+It uses the existing physical convention where `Z+` moves downward. It first
+executes every X and Y segment, waiting for final `Idle` after each segment,
+and only then issues one `Z+1 mm` jog at 50 mm/min. A controller error stops
+the sequence before later segments and before Z.
+
+Before the command, the operator must physically return the pen to P0, place a
+flat red square within 30 mm of P0 in either direction, keep the pen suspended,
+confirm the full XY path is clear, and confirm at least 1 mm of clear downward
+space. The D435i, A4 reference board, and paper must not have moved since the
+dashboard reached `ready`.
+
+First run the preview command above. It must show the expected rough target
+coordinate and `proposed GRBL` lines, including a final `Z1 F50` line. Then
+run the following explicit execution command:
+
+```powershell
+& "C:\Users\Administrator\.conda\envs\dayuwriter-control\python.exe" `
+  -m communication.dayuwriter.visual_follow `
+  --port COM4 `
+  --baseline-x 1.927 `
+  --baseline-y 0.169 `
+  --z-drop-mm 1 `
+  --execute `
+  --physical-preflight `
+  --z-drop-preflight
+```
+
+No serial port is opened without `--execute`. A positive `--z-drop-mm` is
+rejected unless `--z-drop-preflight` is present. The command remains bounded:
+per-axis target delta at most 30 mm, every X/Y segment at most 5 mm, and Z
+drop at most 1 mm. Do not run it unattended or assume that `MPos` is a
+physical encoder measurement.

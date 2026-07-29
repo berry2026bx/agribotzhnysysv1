@@ -14,10 +14,19 @@ from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
 from .grbl_controller import ControllerError, GrblController
-from .grbl_protocol import MIN_JOG_DISTANCE_MM, JogCommand, encode_jog, validate_jog
+from .grbl_protocol import (
+    MAX_Z_FEED_MM_MIN,
+    MIN_JOG_DISTANCE_MM,
+    JogCommand,
+    encode_jog,
+    validate_jog,
+)
+from .workspace import split_delta
 
 
 MIN_FOLLOW_DELTA_MM = 1.0
+MAX_INITIAL_DEMO_DELTA_MM = 30.0
+MAX_Z_DROP_MM = 1.0
 
 
 class VisualFollowError(ValueError):
@@ -79,18 +88,48 @@ def build_follow_proposal(
     *,
     feed_mm_min: float = 50.0,
 ) -> FollowProposal:
-    """Build independent bounded X/Y jogs from target-minus-P0-baseline."""
+    """Build a no-Z target proposal from target-minus-P0-baseline."""
+
+    return build_target_move_proposal(baseline, target, feed_mm_min=feed_mm_min)
+
+
+def build_target_move_proposal(
+    baseline: FollowBaseline,
+    target: LiveTarget,
+    *,
+    feed_mm_min: float = 50.0,
+    z_drop_mm: float = 0.0,
+) -> FollowProposal:
+    """Build a bounded X/Y target path followed by an optional downward Z+ jog."""
 
     _validate_point("baseline", baseline.x_mm, baseline.y_mm)
     _validate_point("target", target.x_mm, target.y_mm)
     delta_x_mm = target.x_mm - baseline.x_mm
     delta_y_mm = target.y_mm - baseline.y_mm
-    commands = tuple(
-        validate_jog(JogCommand(axis, distance_mm, feed_mm_min))
-        for axis, distance_mm in (("X", delta_x_mm), ("Y", delta_y_mm))
-        if abs(distance_mm) >= MIN_FOLLOW_DELTA_MM
-    )
-    return FollowProposal(delta_x_mm, delta_y_mm, commands)
+    if abs(delta_x_mm) > MAX_INITIAL_DEMO_DELTA_MM or abs(delta_y_mm) > MAX_INITIAL_DEMO_DELTA_MM:
+        raise VisualFollowError(
+            f"initial visual target must be within +/-{MAX_INITIAL_DEMO_DELTA_MM:g} mm per axis"
+        )
+
+    try:
+        z_drop_mm = float(z_drop_mm)
+    except (TypeError, ValueError) as exc:
+        raise VisualFollowError("Z drop must be a finite value between 0 and 1 mm") from exc
+    if not isfinite(z_drop_mm) or not 0.0 <= z_drop_mm <= MAX_Z_DROP_MM:
+        raise VisualFollowError(
+            f"Z drop must be within [0, {MAX_Z_DROP_MM:g}] mm"
+        )
+
+    commands: list[JogCommand] = []
+    for axis, distance_mm in (("X", delta_x_mm), ("Y", delta_y_mm)):
+        if abs(distance_mm) >= MIN_FOLLOW_DELTA_MM:
+            commands.extend(
+                validate_jog(JogCommand(axis, segment_mm, feed_mm_min))
+                for segment_mm in split_delta(distance_mm)
+            )
+    if z_drop_mm >= MIN_JOG_DISTANCE_MM:
+        commands.append(validate_jog(JogCommand("Z", z_drop_mm, MAX_Z_FEED_MM_MIN)))
+    return FollowProposal(delta_x_mm, delta_y_mm, tuple(commands))
 
 
 def fetch_dashboard_state(url: str) -> Mapping[str, Any]:
@@ -160,6 +199,17 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Acknowledge pen-at-P0, suspended tip, 12V, and clear XY path",
     )
+    parser.add_argument(
+        "--z-drop-mm",
+        type=float,
+        default=0.0,
+        help="Optional final downward Z+ jog in mm; maximum 1 mm",
+    )
+    parser.add_argument(
+        "--z-drop-preflight",
+        action="store_true",
+        help="Acknowledge at least 1 mm clear downward Z space for --z-drop-mm",
+    )
     return parser
 
 
@@ -174,13 +224,21 @@ def run(
     try:
         target = fetch_ready_live_target(args.dashboard_url, fetcher=fetcher)
         baseline = FollowBaseline(args.baseline_x, args.baseline_y)
-        proposal = build_follow_proposal(baseline, target, feed_mm_min=args.feed)
+        z_drop_mm = getattr(args, "z_drop_mm", 0.0)
+        proposal = build_target_move_proposal(
+            baseline,
+            target,
+            feed_mm_min=args.feed,
+            z_drop_mm=z_drop_mm,
+        )
         _print_proposal(target, baseline, proposal)
         if not args.execute:
             print("preview only; no serial port opened")
             return 0
         if not args.physical_preflight:
             raise VisualFollowError("--execute requires --physical-preflight")
+        if float(z_drop_mm) > 0.0 and not getattr(args, "z_drop_preflight", False):
+            raise VisualFollowError("--z-drop-mm requires --z-drop-preflight")
         if not args.port:
             raise VisualFollowError("--execute requires --port COMx")
         results = execute_follow(args.port, proposal, controller_factory)

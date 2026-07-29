@@ -6,6 +6,8 @@ from communication.dayuwriter.grbl_protocol import JogCommand
 from communication.dayuwriter import visual_follow
 from communication.dayuwriter.visual_follow import (
     FollowBaseline,
+    FollowProposal,
+    LiveTarget,
     build_follow_proposal,
     execute_follow,
     fetch_ready_live_target,
@@ -39,6 +41,45 @@ def test_build_follow_proposal_ignores_sub_millimetre_visual_jitter() -> None:
     proposal = build_follow_proposal(FollowBaseline(1.93, 0.17), target)
 
     assert proposal.commands == ()
+
+
+def test_build_target_move_proposal_splits_xy_then_appends_z_drop() -> None:
+    proposal = visual_follow.build_target_move_proposal(
+        FollowBaseline(1.927, 0.169),
+        LiveTarget(13.927, 7.169),
+        z_drop_mm=1.0,
+    )
+
+    assert proposal.delta_x_mm == pytest.approx(12.0)
+    assert proposal.delta_y_mm == pytest.approx(7.0)
+    assert proposal.commands == (
+        JogCommand("X", 4.0, 50.0),
+        JogCommand("X", 4.0, 50.0),
+        JogCommand("X", 4.0, 50.0),
+        JogCommand("Y", 3.5, 50.0),
+        JogCommand("Y", 3.5, 50.0),
+        JogCommand("Z", 1.0, 50.0),
+    )
+
+
+@pytest.mark.parametrize("target", [LiveTarget(32.0, 0.169), LiveTarget(1.927, -30.0)])
+def test_build_target_move_proposal_rejects_target_outside_initial_demo_envelope(
+    target: LiveTarget,
+) -> None:
+    with pytest.raises(visual_follow.VisualFollowError, match="30 mm"):
+        visual_follow.build_target_move_proposal(
+            FollowBaseline(1.927, 0.169),
+            target,
+        )
+
+
+def test_build_target_move_proposal_omits_z_when_no_drop_is_requested() -> None:
+    proposal = visual_follow.build_target_move_proposal(
+        FollowBaseline(1.927, 0.169),
+        LiveTarget(6.927, 0.169),
+    )
+
+    assert proposal.commands == (JogCommand("X", 5.0, 50.0),)
 
 
 class FakeController:
@@ -80,6 +121,8 @@ def args(**overrides) -> Namespace:
         "port": None,
         "execute": False,
         "physical_preflight": False,
+        "z_drop_mm": 0.0,
+        "z_drop_preflight": False,
     }
     values.update(overrides)
     return Namespace(**values)
@@ -105,6 +148,37 @@ def test_execute_requires_the_physical_preflight_acknowledgement(capsys) -> None
     ) == 2
 
     assert "--physical-preflight" in capsys.readouterr().err
+
+
+def test_execute_rejects_z_drop_without_separate_z_preflight(capsys) -> None:
+    factory_calls: list[str] = []
+
+    assert visual_follow.run(
+        args(execute=True, port="COM4", physical_preflight=True, z_drop_mm=1.0),
+        fetcher=lambda _url: ready_payload(x=6.927, y=0.169),
+        controller_factory=lambda port: factory_calls.append(port),
+    ) == 2
+
+    assert factory_calls == []
+    assert "--z-drop-preflight" in capsys.readouterr().err
+
+
+def test_execute_target_move_uses_one_controller_and_runs_z_last() -> None:
+    controller = FakeController()
+    opened_ports: list[str] = []
+    proposal = FollowProposal(
+        6.0,
+        0.0,
+        (JogCommand("X", 3.0, 50.0), JogCommand("X", 3.0, 50.0), JogCommand("Z", 1.0, 50.0)),
+    )
+
+    assert execute_follow(
+        "COM4",
+        proposal,
+        lambda port: (opened_ports.append(port) or controller),
+    ) == ("done", "done", "done")
+    assert opened_ports == ["COM4"]
+    assert controller.jog_calls[-1] == JogCommand("Z", 1.0, 50.0)
 
 
 def test_fetch_ready_live_target_retries_a_transient_depth_failure() -> None:
