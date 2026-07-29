@@ -31,6 +31,7 @@ from .aruco_reference_board import (
     default_layout,
     load_registration,
 )
+from .plane_mapping import PlaneMappingError, predict_machine_xy
 from .red_target import (
     RedTarget,
     RedTargetConfig,
@@ -269,6 +270,7 @@ def snapshot_state(
     *,
     error: str | None,
     reference: ReferenceStatus | None = None,
+    plane_machine_xy_mm: tuple[float, float] | None = None,
 ) -> dict[str, Any]:
     """Serialize the current display-only camera result for the browser."""
     state: dict[str, Any] = {
@@ -300,6 +302,21 @@ def snapshot_state(
         "fill_ratio": target.fill_ratio,
     }
     if observation is None:
+        if plane_machine_xy_mm is not None:
+            x_mm, y_mm = plane_machine_xy_mm
+            if not math.isfinite(x_mm) or not math.isfinite(y_mm):
+                raise DashboardError("plane_machine_xy_mm must be finite")
+            state.update(
+                {
+                    "state": "ready",
+                    "mapping_state": "available",
+                    "depth_state": "unavailable",
+                    "depth_error": error,
+                    "error": None,
+                    "machine_xy_mm": {"x": x_mm, "y": y_mm},
+                }
+            )
+            return state
         state["state"] = "depth_unavailable"
         return state
 
@@ -489,9 +506,23 @@ def run_camera_worker(
                     depth_sample_radius=depth_sample_radius,
                 )
             except RedTargetError as exc:
+                plane_machine_xy_mm: tuple[float, float] | None = None
+                if pixel_to_machine is not None:
+                    try:
+                        plane_machine_xy_mm = predict_machine_xy(
+                            pixel_to_machine, target.center_uv
+                        )
+                    except PlaneMappingError:
+                        plane_machine_xy_mm = None
                 store.publish(
                     make_bmp_bytes(rgb),
-                    snapshot_state(target, None, error=str(exc), reference=reference),
+                    snapshot_state(
+                        target,
+                        None,
+                        error=str(exc),
+                        reference=reference,
+                        plane_machine_xy_mm=plane_machine_xy_mm,
+                    ),
                 )
                 continue
             store.publish(

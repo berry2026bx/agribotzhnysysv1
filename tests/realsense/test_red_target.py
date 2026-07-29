@@ -167,6 +167,24 @@ def test_dashboard_state_is_ready_but_never_authorizes_motion() -> None:
     assert state["machine_xy_mm"] == {"x": 30.0, "y": 30.0}
 
 
+def test_dashboard_keeps_plane_xy_when_depth_is_temporarily_unavailable() -> None:
+    target = find_red_target(red_circle_frame())
+    assert target is not None
+
+    state = snapshot_state(
+        target,
+        None,
+        error="no valid aligned depth for red target",
+        plane_machine_xy_mm=(30.0, 30.0),
+    )
+
+    assert state["state"] == "ready"
+    assert state["mapping_state"] == "available"
+    assert state["depth_state"] == "unavailable"
+    assert state["machine_xy_mm"] == {"x": 30.0, "y": 30.0}
+    assert state["motion_permission"] == "display_only"
+
+
 def test_dashboard_bmp_uses_padded_24_bit_rows() -> None:
     rgb = np.zeros((2, 3, 3), dtype=np.uint8)
     rgb[0, 0] = (255, 0, 0)
