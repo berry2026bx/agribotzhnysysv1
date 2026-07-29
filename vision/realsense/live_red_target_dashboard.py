@@ -18,6 +18,7 @@ from urllib.parse import urlparse
 import numpy as np
 
 from .aruco_plane_calibration import (
+    ArucoSessionResult,
     REQUIRED_COMPLETE_FRAMES,
     SessionCalibrationError,
     build_aruco_session_record,
@@ -45,6 +46,9 @@ COLOR_HEIGHT = 720
 DEPTH_WIDTH = 640
 DEPTH_HEIGHT = 480
 FRAME_RATE = 30
+# D435i A's measured subpixel corner noise reached 5.58 px at p99 in a
+# stationary 180-frame sample; larger movement invalidates the session.
+MAX_REFERENCE_MARKER_DRIFT_PX = 8.0
 
 
 class DashboardError(RuntimeError):
@@ -84,6 +88,7 @@ class ArucoReferenceTracker:
         self._serial = serial
         self._registration_detail = registration_detail
         self._complete_frames: list[dict[int, np.ndarray]] = []
+        self._session: ArucoSessionResult | None = None
 
     def confirm_registration(self, registration: dict[str, object]) -> None:
         """Accept a locally confirmed display-only board registration and restart collection."""
@@ -94,6 +99,7 @@ class ArucoReferenceTracker:
         self._registration = registration
         self._registration_detail = None
         self._complete_frames.clear()
+        self._session = None
 
     def update(self, corners_uv: Mapping[int, np.ndarray]) -> ReferenceStatus:
         """Return a new mapping status and never retain a stale matrix after failure."""
@@ -110,7 +116,30 @@ class ArucoReferenceTracker:
             normalized = _complete_reference_frame(corners_uv, self.layout)
         except SessionCalibrationError as exc:
             self._complete_frames.clear()
+            self._session = None
             return ReferenceStatus("reference_lost", str(exc), marker_corners, None, None)
+
+        if self._session is not None:
+            max_drift_px = _maximum_marker_corner_drift(
+                normalized, self._session.median_corners_uv
+            )
+            if max_drift_px > MAX_REFERENCE_MARKER_DRIFT_PX:
+                self._complete_frames.clear()
+                self._session = None
+                return ReferenceStatus(
+                    "reference_moved",
+                    f"reference markers moved by {max_drift_px:.2f} px; collecting a new session",
+                    marker_corners,
+                    None,
+                    None,
+                )
+            return ReferenceStatus(
+                "ready",
+                None,
+                marker_corners,
+                self._session.matrix_pixel_to_machine,
+                self._session.record["validation"],
+            )
 
         if len(self._complete_frames) < REQUIRED_COMPLETE_FRAMES:
             self._complete_frames.append(normalized)
@@ -123,8 +152,6 @@ class ArucoReferenceTracker:
                     None,
                 )
             complete_frames = self._complete_frames
-        else:
-            complete_frames = [normalized.copy() for _ in range(REQUIRED_COMPLETE_FRAMES)]
 
         try:
             result = build_aruco_session_record(
@@ -137,6 +164,7 @@ class ArucoReferenceTracker:
         except SessionCalibrationError as exc:
             self._complete_frames.clear()
             return ReferenceStatus("calibration_rejected", str(exc), marker_corners, None, None)
+        self._session = result
         return ReferenceStatus(
             "ready",
             None,
@@ -343,6 +371,17 @@ def _complete_reference_frame(
             )
         frame[marker_id] = corners.copy()
     return frame
+
+
+def _maximum_marker_corner_drift(
+    observed: Mapping[int, np.ndarray], baseline: Mapping[int, np.ndarray]
+) -> float:
+    """Return the largest Euclidean RGB-pixel corner displacement."""
+    distances = [
+        np.linalg.norm(observed[marker_id] - baseline[marker_id], axis=1)
+        for marker_id in observed
+    ]
+    return float(np.max(np.concatenate(distances)))
 
 
 def _serializable_marker_corners(

@@ -2,6 +2,7 @@ import cv2
 import numpy as np
 import pytest
 
+from vision.realsense import aruco_plane_calibration
 from vision.realsense.aruco_plane_calibration import (
     SessionCalibrationError,
     build_aruco_session_record,
@@ -104,3 +105,21 @@ def test_detect_marker_corners_keeps_only_known_board_ids() -> None:
     assert list(corners) == [0]
     assert corners[0].shape == (4, 2)
     assert np.isfinite(corners[0]).all()
+
+
+def test_detect_marker_corners_enables_subpixel_refinement(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class Detector:
+        def __init__(self, dictionary, parameters) -> None:
+            captured["parameters"] = parameters
+
+        def detectMarkers(self, grayscale):
+            return [], None, []
+
+    monkeypatch.setattr(aruco_plane_calibration.cv2.aruco, "ArucoDetector", Detector)
+
+    assert aruco_plane_calibration.detect_marker_corners(
+        np.zeros((32, 32, 3), dtype=np.uint8), default_layout()
+    ) == {}
+    assert captured["parameters"].cornerRefinementMethod == cv2.aruco.CORNER_REFINE_SUBPIX

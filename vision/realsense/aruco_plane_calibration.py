@@ -45,10 +45,12 @@ def detect_marker_corners(rgb: np.ndarray, layout: ArucoBoardLayout) -> dict[int
         raise SessionCalibrationError("ArUco detection requires uint8 RGB pixels")
     dictionary = cv2.aruco.getPredefinedDictionary(getattr(cv2.aruco, ARUCO_DICTIONARY_NAME))
     grayscale = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+    parameters = cv2.aruco.DetectorParameters()
+    parameters.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_SUBPIX
     if hasattr(cv2.aruco, "ArucoDetector"):
-        corners, identifiers, _ = cv2.aruco.ArucoDetector(dictionary).detectMarkers(grayscale)
+        corners, identifiers, _ = cv2.aruco.ArucoDetector(dictionary, parameters).detectMarkers(grayscale)
     else:
-        corners, identifiers, _ = cv2.aruco.detectMarkers(grayscale, dictionary)
+        corners, identifiers, _ = cv2.aruco.detectMarkers(grayscale, dictionary, parameters=parameters)
     if identifiers is None:
         return {}
 

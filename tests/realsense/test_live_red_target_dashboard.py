@@ -70,6 +70,29 @@ def test_tracker_collects_12_frames_then_drops_mapping_when_marker_is_missing() 
     assert lost.matrix_pixel_to_machine is None
 
 
+def test_tracker_keeps_a_validated_mapping_for_small_marker_jitter() -> None:
+    tracker = ArucoReferenceTracker(layout=default_layout(), registration=registration())
+    markers = all_markers()
+
+    for _ in range(11):
+        tracker.update(markers)
+    ready = tracker.update(markers)
+    jittered = {marker_id: corners + np.array([0.2, -0.1]) for marker_id, corners in markers.items()}
+
+    stable = tracker.update(jittered)
+
+    assert ready.state == "ready"
+    assert stable.state == "ready"
+    assert stable.validation == ready.validation
+    assert stable.matrix_pixel_to_machine == pytest.approx(ready.matrix_pixel_to_machine)
+
+    moved = {marker_id: corners + np.array([10.0, 0.0]) for marker_id, corners in markers.items()}
+    invalidated = tracker.update(moved)
+
+    assert invalidated.state == "reference_moved"
+    assert invalidated.matrix_pixel_to_machine is None
+
+
 def test_reference_state_is_always_display_only() -> None:
     state = reference_snapshot_state(
         state="calibration_rejected",
