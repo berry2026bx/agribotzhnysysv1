@@ -19,7 +19,7 @@ HELP_TEXT = """Commands:
   help
   quit
 
-Limits: distance 0.001-5 mm; XY feed <= 100; Z feed <= 50.
+Limits: distance 0.001-5 mm; XY feed <= 500; Z feed <= 50.
 Current machine convention: positive Z moves downward.
 XY workspace from P0: X [-190, 190] mm; Y [-90, 140] mm.
 """

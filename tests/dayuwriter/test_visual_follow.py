@@ -185,6 +185,27 @@ def test_execute_continuous_follow_can_return_to_p0_after_the_session() -> None:
     assert controller.jog_calls == [JogCommand("X", 5.0, 50.0), JogCommand("X", -5.0, 50.0)]
 
 
+def test_execute_continuous_follow_holds_ten_seconds_before_returning_to_p0() -> None:
+    controller = FakeController()
+    snapshots = iter([ready_payload(x=6.927, y=0.169) for _ in range(3)])
+    waits: list[float] = []
+
+    visual_follow.execute_continuous_follow(
+        "COM4",
+        FollowBaseline(1.927, 0.169),
+        max_moves=1,
+        max_observations=3,
+        return_to_p0=True,
+        hold_at_target_s=10.0,
+        fetcher=lambda _url: next(snapshots),
+        controller_factory=lambda _port: controller,
+        sleeper=waits.append,
+    )
+
+    assert waits[-1] == 10.0
+    assert waits.count(10.0) == 1
+
+
 def args(**overrides) -> Namespace:
     values = {
         "dashboard_url": "http://127.0.0.1:8765/state.json",

@@ -263,6 +263,7 @@ def execute_continuous_follow(
     max_moves: int,
     max_observations: int,
     return_to_p0: bool = False,
+    hold_at_target_s: float = 0.0,
     dashboard_url: str = "http://127.0.0.1:8765/state.json",
     feed_mm_min: float = 50.0,
     fetcher: Callable[[str], Mapping[str, Any]] = fetch_dashboard_state,
@@ -275,6 +276,14 @@ def execute_continuous_follow(
         raise VisualFollowError("continuous follow max_moves must be within [1, 10]")
     if not 3 <= max_observations <= 240:
         raise VisualFollowError("continuous follow max_observations must be within [3, 240]")
+    try:
+        hold_at_target_s = float(hold_at_target_s)
+    except (TypeError, ValueError) as exc:
+        raise VisualFollowError("hold_at_target_s must be within [0, 10]") from exc
+    if not isfinite(hold_at_target_s) or not 0.0 <= hold_at_target_s <= 10.0:
+        raise VisualFollowError("hold_at_target_s must be within [0, 10]")
+    if hold_at_target_s > 0.0 and not return_to_p0:
+        raise VisualFollowError("hold_at_target_s requires return_to_p0")
     session = ContinuousFollowSession(p0_baseline, feed_mm_min=feed_mm_min)
     results: list[Any] = []
     completed_moves = 0
@@ -289,6 +298,8 @@ def execute_continuous_follow(
                 session.mark_executed(stable_target, proposal)
                 completed_moves += 1
                 if completed_moves >= max_moves:
+                    if hold_at_target_s > 0.0:
+                        sleeper(hold_at_target_s)
                     break
             if observation_index + 1 < max_observations:
                 sleeper(0.25)
@@ -316,7 +327,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--baseline-x", required=True, type=float, help="P0 visual baseline X in mm")
     parser.add_argument("--baseline-y", required=True, type=float, help="P0 visual baseline Y in mm")
-    parser.add_argument("--feed", type=float, default=50.0, help="XY feed in mm/min, maximum 100")
+    parser.add_argument("--feed", type=float, default=50.0, help="XY feed in mm/min, maximum 500")
     parser.add_argument("--port", help="Live CH340 COM port; required with --execute")
     parser.add_argument("--execute", action="store_true", help="Send the bounded proposal to GRBL")
     parser.add_argument(
@@ -356,6 +367,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--return-to-p0",
         action="store_true",
         help="After a normal continuous session, return XY to the armed P0 position",
+    )
+    parser.add_argument(
+        "--hold-at-target-seconds",
+        type=float,
+        default=0.0,
+        help="Hold at the final target for 0 to 10 seconds before --return-to-p0",
     )
     return parser
 
@@ -430,6 +447,7 @@ def _run_continuous_follow(
         dashboard_url=args.dashboard_url,
         feed_mm_min=args.feed,
         return_to_p0=getattr(args, "return_to_p0", False),
+        hold_at_target_s=getattr(args, "hold_at_target_seconds", 0.0),
         fetcher=fetcher,
         controller_factory=controller_factory,
     )

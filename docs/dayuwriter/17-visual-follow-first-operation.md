@@ -113,8 +113,10 @@ With `--return-to-p0`, the program sends a final XY-only return from the last
 successfully commanded target to the armed P0 position after a normal session
 end. It does not return after a target/reference/serial/controller error. The
 outbound and return routes must both be clear before starting. The command
-below uses 100 mm/min, the bounded controller maximum for XY; use a lower
-`--feed` value if the machine misses steps or vibrates.
+below uses 500 mm/min, the current bounded XY commissioning limit. The live
+GRBL configuration reports `$110=$111=2000 mm/min`, but that configuration
+value alone does not prove the mechanics can run stably at that speed; use a
+lower `--feed` value if the machine misses steps or vibrates.
 
 ```powershell
 & "C:\Users\Administrator\.conda\envs\dayuwriter-control\python.exe" `
@@ -124,9 +126,10 @@ below uses 100 mm/min, the bounded controller maximum for XY; use a lower
   --baseline-y 0.169 `
   --continuous `
   --return-to-p0 `
-  --max-moves 3 `
+  --hold-at-target-seconds 10 `
+  --max-moves 1 `
   --max-observations 120 `
-  --feed 100 `
+  --feed 500 `
   --execute `
   --physical-preflight
 ```

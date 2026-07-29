@@ -6,7 +6,7 @@ from math import isfinite
 READ_ONLY_LINE_COMMANDS = frozenset({"$I", "$$", "$#", "$G"})
 READ_ONLY_REALTIME_COMMANDS = frozenset({"?"})
 MAX_JOG_DISTANCE_MM = 5.0
-MAX_XY_FEED_MM_MIN = 100.0
+MAX_XY_FEED_MM_MIN = 500.0
 MAX_Z_FEED_MM_MIN = 50.0
 MIN_JOG_DISTANCE_MM = 0.001
 MIN_JOG_FEED_MM_MIN = 0.001

@@ -72,6 +72,12 @@ def test_validate_jog_accepts_minimum_distance_and_feed_resolution() -> None:
     assert command == JogCommand(axis="X", distance_mm=0.001, feed_mm_min=0.001)
 
 
+def test_validate_jog_accepts_the_five_hundred_mm_per_min_xy_commissioning_limit() -> None:
+    command = validate_jog(JogCommand(axis="X", distance_mm=5.0, feed_mm_min=500.0))
+
+    assert command == JogCommand(axis="X", distance_mm=5.0, feed_mm_min=500.0)
+
+
 @pytest.mark.parametrize(
     "command",
     [
@@ -87,7 +93,7 @@ def test_validate_jog_accepts_minimum_distance_and_feed_resolution() -> None:
         JogCommand(axis="X", distance_mm=1, feed_mm_min=-1),
         JogCommand(axis="X", distance_mm=1, feed_mm_min=float("nan")),
         JogCommand(axis="X", distance_mm=1, feed_mm_min=float("inf")),
-        JogCommand(axis="X", distance_mm=1, feed_mm_min=100.1),
+        JogCommand(axis="X", distance_mm=1, feed_mm_min=500.1),
         JogCommand(axis="Z", distance_mm=1, feed_mm_min=50.1),
     ],
 )
