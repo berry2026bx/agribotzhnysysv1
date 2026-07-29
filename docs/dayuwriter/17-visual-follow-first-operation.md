@@ -86,7 +86,7 @@ run the following explicit execution command:
 
 No serial port is opened without `--execute`. A positive `--z-drop-mm` is
 rejected unless `--z-drop-preflight` is present. The command remains bounded:
-per-axis target delta at most 30 mm, every X/Y segment at most 5 mm, and Z
+per-axis target delta at most 60 mm, every X/Y segment at most 5 mm, and Z
 drop at most 1 mm. Do not run it unattended or assume that `MPos` is a
 physical encoder measurement.
 
@@ -109,6 +109,13 @@ camera, A4 board, and paper have not moved. A manual push, power/USB loss,
 GRBL reset, serial error, or suspected lost step invalidates the assumed pose;
 stop and physically return to P0 before another session.
 
+With `--return-to-p0`, the program sends a final XY-only return from the last
+successfully commanded target to the armed P0 position after a normal session
+end. It does not return after a target/reference/serial/controller error. The
+outbound and return routes must both be clear before starting. The command
+below uses 100 mm/min, the bounded controller maximum for XY; use a lower
+`--feed` value if the machine misses steps or vibrates.
+
 ```powershell
 & "C:\Users\Administrator\.conda\envs\dayuwriter-control\python.exe" `
   -m communication.dayuwriter.visual_follow `
@@ -116,8 +123,10 @@ stop and physically return to P0 before another session.
   --baseline-x 1.927 `
   --baseline-y 0.169 `
   --continuous `
+  --return-to-p0 `
   --max-moves 3 `
   --max-observations 120 `
+  --feed 100 `
   --execute `
   --physical-preflight
 ```

@@ -166,6 +166,25 @@ def test_execute_continuous_follow_keeps_one_controller_for_two_target_changes()
     assert controller.jog_calls == [JogCommand("X", 5.0, 50.0), JogCommand("X", 4.0, 50.0)]
 
 
+def test_execute_continuous_follow_can_return_to_p0_after_the_session() -> None:
+    controller = FakeController()
+    snapshots = iter([ready_payload(x=6.927, y=0.169) for _ in range(3)])
+
+    results = visual_follow.execute_continuous_follow(
+        "COM4",
+        FollowBaseline(1.927, 0.169),
+        max_moves=1,
+        max_observations=3,
+        return_to_p0=True,
+        fetcher=lambda _url: next(snapshots),
+        controller_factory=lambda _port: controller,
+        sleeper=lambda _seconds: None,
+    )
+
+    assert len(results) == 2
+    assert controller.jog_calls == [JogCommand("X", 5.0, 50.0), JogCommand("X", -5.0, 50.0)]
+
+
 def args(**overrides) -> Namespace:
     values = {
         "dashboard_url": "http://127.0.0.1:8765/state.json",

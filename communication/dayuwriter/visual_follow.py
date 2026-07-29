@@ -101,6 +101,12 @@ class ContinuousFollowSession:
             target.y_mm if "Y" in moved_axes else self._commanded_position.y_mm,
         )
 
+    @property
+    def commanded_position(self) -> FollowBaseline:
+        """The estimated XY position after successful controller completions."""
+
+        return self._commanded_position
+
 
 def _targets_are_stable(targets: Sequence[LiveTarget]) -> bool:
     return (
@@ -256,6 +262,7 @@ def execute_continuous_follow(
     *,
     max_moves: int,
     max_observations: int,
+    return_to_p0: bool = False,
     dashboard_url: str = "http://127.0.0.1:8765/state.json",
     feed_mm_min: float = 50.0,
     fetcher: Callable[[str], Mapping[str, Any]] = fetch_dashboard_state,
@@ -282,9 +289,19 @@ def execute_continuous_follow(
                 session.mark_executed(stable_target, proposal)
                 completed_moves += 1
                 if completed_moves >= max_moves:
-                    return tuple(results)
+                    break
             if observation_index + 1 < max_observations:
                 sleeper(0.25)
+        if return_to_p0:
+            return_target = LiveTarget(p0_baseline.x_mm, p0_baseline.y_mm)
+            return_proposal = build_target_move_proposal(
+                session.commanded_position,
+                return_target,
+                feed_mm_min=feed_mm_min,
+            )
+            for command in return_proposal.commands:
+                results.append(controller.jog(command))
+            session.mark_executed(return_target, return_proposal)
     return tuple(results)
 
 
@@ -334,6 +351,11 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=120,
         help="Maximum 250 ms target observations in continuous mode; maximum 240",
+    )
+    parser.add_argument(
+        "--return-to-p0",
+        action="store_true",
+        help="After a normal continuous session, return XY to the armed P0 position",
     )
     return parser
 
@@ -407,6 +429,7 @@ def _run_continuous_follow(
         max_observations=getattr(args, "max_observations", 120),
         dashboard_url=args.dashboard_url,
         feed_mm_min=args.feed,
+        return_to_p0=getattr(args, "return_to_p0", False),
         fetcher=fetcher,
         controller_factory=controller_factory,
     )
