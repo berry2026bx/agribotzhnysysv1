@@ -7,7 +7,7 @@ import json
 import math
 import struct
 import threading
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -50,6 +50,7 @@ FRAME_RATE = 30
 # D435i A's measured subpixel corner noise reached 5.58 px at p99 in a
 # stationary 180-frame sample; larger movement invalidates the session.
 MAX_REFERENCE_MARKER_DRIFT_PX = 8.0
+REFERENCE_BOARD_TARGET_MARGIN_MM = 5.0
 
 
 class DashboardError(RuntimeError):
@@ -370,6 +371,34 @@ def reference_snapshot_state(
     }
 
 
+def _reference_board_candidate_filter(
+    layout: ArucoBoardLayout,
+    pixel_to_machine: np.ndarray,
+) -> Callable[[RedTarget], bool]:
+    """Accept only target centres within the physical A4 reference plane."""
+
+    paper_corners = (
+        layout.machine_xy_for_board((0.0, 0.0)),
+        layout.machine_xy_for_board((layout.width_mm, 0.0)),
+        layout.machine_xy_for_board((layout.width_mm, layout.height_mm)),
+        layout.machine_xy_for_board((0.0, layout.height_mm)),
+    )
+    x_values, y_values = zip(*paper_corners, strict=True)
+    x_min = min(x_values) - REFERENCE_BOARD_TARGET_MARGIN_MM
+    x_max = max(x_values) + REFERENCE_BOARD_TARGET_MARGIN_MM
+    y_min = min(y_values) - REFERENCE_BOARD_TARGET_MARGIN_MM
+    y_max = max(y_values) + REFERENCE_BOARD_TARGET_MARGIN_MM
+
+    def accepts(candidate: RedTarget) -> bool:
+        try:
+            x_mm, y_mm = predict_machine_xy(pixel_to_machine, candidate.center_uv)
+        except PlaneMappingError:
+            return False
+        return x_min <= x_mm <= x_max and y_min <= y_mm <= y_max
+
+    return accepts
+
+
 def _complete_reference_frame(
     corners_uv: Mapping[int, np.ndarray], layout: ArucoBoardLayout
 ) -> dict[int, np.ndarray]:
@@ -487,7 +516,19 @@ def run_camera_worker(
                 except SessionCalibrationError as exc:
                     reference = ReferenceStatus("reference_lost", str(exc), {}, None, None)
                     pixel_to_machine = None
-            target = find_red_target(rgb, target_config)
+            candidate_filter: Callable[[RedTarget], bool] | None = None
+            if (
+                reference_tracker is not None
+                and reference is not None
+                and reference.state == "ready"
+                and pixel_to_machine is not None
+            ):
+                candidate_filter = _reference_board_candidate_filter(
+                    reference_tracker.layout, pixel_to_machine
+                )
+            target = find_red_target(
+                rgb, target_config, candidate_filter=candidate_filter
+            )
             if target is None:
                 store.publish(
                     make_bmp_bytes(rgb), snapshot_state(None, None, error=None, reference=reference)

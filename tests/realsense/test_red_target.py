@@ -5,9 +5,12 @@ import pytest
 
 from vision.realsense.red_target import (
     RedTargetConfig,
+    RedTarget,
     find_red_target,
     observe_target,
 )
+from vision.realsense import live_red_target_dashboard
+from vision.realsense.aruco_reference_board import default_layout
 from vision.realsense.live_red_target_dashboard import (
     build_parser,
     make_bmp_bytes,
@@ -75,6 +78,29 @@ def test_finds_a_dim_small_red_target_seen_at_an_oblique_angle() -> None:
     assert target is not None
     assert target.center_uv == pytest.approx((50.0, 40.0), abs=0.2)
     assert target.area_px >= 20
+
+
+def test_candidate_filter_rejects_a_larger_false_red_region_outside_the_paper() -> None:
+    image = red_circle_frame(center_uv=(50, 40), radius_px=6)
+    vertical, horizontal = np.ogrid[: image.shape[0], : image.shape[1]]
+    false_mask = (horizontal - 12) ** 2 + (vertical - 12) ** 2 <= 10**2
+    image[false_mask] = (245, 15, 10)
+
+    target = find_red_target(image, candidate_filter=lambda item: item.center_uv[0] > 20.0)
+
+    assert target is not None
+    assert target.center_uv == pytest.approx((50.0, 40.0), abs=0.2)
+
+
+def test_reference_board_candidate_filter_accepts_only_a4_machine_coordinates() -> None:
+    allow = live_red_target_dashboard._reference_board_candidate_filter(
+        default_layout(), np.eye(3)
+    )
+    inside = RedTarget((0.0, 0.0), 20, (0, 0, 4, 5), 1.0)
+    outside = RedTarget((500.0, 0.0), 20, (0, 0, 4, 5), 1.0)
+
+    assert allow(inside) is True
+    assert allow(outside) is False
 
 
 def test_ignores_an_elongated_red_region() -> None:

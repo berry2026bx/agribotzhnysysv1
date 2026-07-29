@@ -44,9 +44,12 @@ class TargetObservation:
 
 
 def find_red_target(
-    rgb: np.ndarray, config: RedTargetConfig | None = None
+    rgb: np.ndarray,
+    config: RedTargetConfig | None = None,
+    *,
+    candidate_filter: Callable[[RedTarget], bool] | None = None,
 ) -> RedTarget | None:
-    """Return the largest filled, approximately circular saturated-red component."""
+    """Return the largest eligible saturated-red component in an RGB image."""
     normalized_config = config or RedTargetConfig()
     _validate_config(normalized_config)
     image = np.asarray(rgb)
@@ -63,6 +66,8 @@ def find_red_target(
         & ((red - blue) >= normalized_config.min_red_advantage)
     )
     candidates = _red_component_candidates(mask, normalized_config)
+    if candidate_filter is not None:
+        candidates = [candidate for candidate in candidates if candidate_filter(candidate)]
     if not candidates:
         return None
     return max(candidates, key=lambda candidate: candidate.area_px)
