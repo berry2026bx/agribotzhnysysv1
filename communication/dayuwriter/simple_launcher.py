@@ -30,6 +30,7 @@ DASHBOARD_PORT = 8765
 DASHBOARD_URL = f"http://127.0.0.1:{DASHBOARD_PORT}/"
 STATE_URL = f"{DASHBOARD_URL}state.json"
 READY_TIMEOUT_SECONDS = 90.0
+MACHINE_P0 = (0.0, 0.0)
 CALIBRATION_MOVES = {
     "X+30": ("X", 30.0),
     "X-30": ("X", -30.0),
@@ -42,8 +43,8 @@ class LauncherError(ValueError):
     """Raised when the launcher cannot prove that a safe software state exists."""
 
 
-def parse_p0_baseline(payload: Mapping[str, Any]) -> tuple[float, float]:
-    """Return a current P0 visual baseline only from a strict ready dashboard state."""
+def parse_ready_target(payload: Mapping[str, Any]) -> tuple[float, float]:
+    """Return the current red-target coordinate from a strict ready dashboard state."""
 
     if payload.get("state") != "ready" or payload.get("mapping_state") != "available":
         raise LauncherError("visual page is not ready")
@@ -85,12 +86,11 @@ def build_follow_command(
     *,
     python: str,
     port: str,
-    baseline: tuple[float, float],
     dashboard_url: str,
 ) -> list[str]:
-    """Build the continuous XY-only command used after the operator arms P0."""
+    """Build continuous XY following from the registered physical P0."""
 
-    x_mm, y_mm = baseline
+    x_mm, y_mm = MACHINE_P0
     return [
         python,
         "-m",
@@ -220,7 +220,7 @@ class DayuWriterLauncher:
         ).grid(row=2, column=0, sticky="ew", pady=(4, 8))
         ttk.Checkbutton(
             outer,
-            text="已确认：笔尖在 P0，红方块在 P0，12 V 已接通，笔尖悬空，路径净空",
+            text="已确认：笔尖在物理 P0，红方块可识别，12 V 已接通，笔尖悬空，路径净空",
             variable=self.preflight,
         ).grid(row=3, column=0, sticky="w", pady=(6, 8))
         calibration = ttk.Frame(outer)
@@ -402,7 +402,7 @@ class DayuWriterLauncher:
         last_error = ""
         while time.monotonic() < deadline:
             try:
-                baseline = parse_p0_baseline(fetch_dashboard_state())
+                start_target = parse_ready_target(fetch_dashboard_state())
             except LauncherError as exc:
                 last_error = str(exc)
                 time.sleep(0.5)
@@ -410,12 +410,16 @@ class DayuWriterLauncher:
             command = build_follow_command(
                 python=sys.executable,
                 port=port,
-                baseline=baseline,
                 dashboard_url=STATE_URL,
             )
             self.follow_process = self._start_process(command, "follow")
             self.events.put(
-                ("follow", f"自动跟随：已武装 P0 X={baseline[0]:.3f} mm, Y={baseline[1]:.3f} mm")
+                (
+                    "follow",
+                    "自动跟随：真实 P0 固定为 X=0.000 mm, Y=0.000 mm；"
+                    f"当前红方块 X={start_target[0]:.3f} mm, Y={start_target[1]:.3f} mm，"
+                    "等待红方块移动",
+                )
             )
             return
         self.events.put(("follow", f"自动跟随未启动：{last_error or '等待超时'}"))
