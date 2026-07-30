@@ -102,7 +102,8 @@ The session accepts only a `ready` dashboard with all reference checks intact.
 It requires three target samples whose X and Y spread is at most 1 mm. It
 stops on a camera/reference/target failure or when a target is more than
 60 mm from the captured P0 visual baseline on either axis. Each session is
-bounded to at most 10 target-return cycles and 120 observations (about 30 s).
+bounded to at most 10 target-return cycles and 120 observations (about 30 s
+of sampling, plus the configured hold time for each completed cycle).
 
 Before each real session, physically confirm that the pen is at P0, 12 V is
 connected, the pen tip is suspended, the entire XY path is clear, and the
