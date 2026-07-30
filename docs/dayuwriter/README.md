@@ -36,6 +36,16 @@
 12. [22-项目失败复盘与防复发记录](22-project-failure-postmortems.md)
 13. [23-重启恢复、重标定与助手复盘手册](23-restart-recalibration-and-assistant-retrospective.md)
 
+## 当前操作手册（2026-07-30）
+
+以下五份是用于脱离 Codex 后实际运行和交接的当前手册。它们优先于早期文档中的历史 `COMx`、P0 基线、有限演示范围或一次性误差数值；每次运行仍须以当次设备枚举、页面质量闸门与现场观察为准。
+
+1. [24-不依赖 Codex 的代码操作手册](24-standalone-code-operation.md)：启动网页、记录 P0 基线、预览、单次 XY/Z 与连续跟随。
+2. [25-几何变化重标定手册](25-geometry-change-recalibration-runbook.md)：相机、纸板、P0 或写字机位置变化后的判定与重登记。
+3. [26-重启后的完整恢复手册](26-restart-full-system-runbook.md)：电脑/相机/写字机重启后的恢复顺序。
+4. [27-全新电脑复刻手册](27-fresh-pc-reproduction.md)：环境、驱动、离线测试、硬件验收和交接证据。
+5. [28-全过程复盘、失误与经验](28-complete-retrospective-and-lessons.md)：已完成边界、失败根因、AI/工程失误和后续任务起点。
+
 ## 原始证据
 
 `baseline/` 保存设备身份、GRBL 原始输出、三轴观察、Python 实机测试和标定记录。原始记录不应被后续总结替代。
