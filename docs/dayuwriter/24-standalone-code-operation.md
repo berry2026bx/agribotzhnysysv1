@@ -34,6 +34,26 @@ Set-Location $project
 
 ## 2. 启动相机与坐标可视化页面
 
+### 2.0 最快入口：双击或 VS Code 一键安全启动
+
+仓库现在提供了一个**不会运动**的启动器。它会检查 Python 依赖、枚举 D435i、启动 dashboard、打开浏览器；若 Windows 只找到一个 CH340 端口，还会打开 GRBL 监视器，但监视器仍处于未连接状态。
+
+双击 Windows 资源管理器中的：
+
+```text
+scripts\start_dayuwriter_session.cmd
+```
+
+或在 VS Code 打开仓库根目录，按 `Ctrl+Shift+P`，选择 `Tasks: Run Task`，再选择：
+
+```text
+DayuWriter: Safe start dashboard and monitor
+```
+
+它只做显示和待连接监视器，不运行 `visual_follow`，不传递 `--execute`，不发送 GRBL Jog，也不接通 12 V。启动后仍须依次按第 2.2、3、4、5 节确认相机质量、P0、串口、12 V 和路径，才能手动运行任何动作命令。
+
+如果启动器提示端口 `8765` 已被占用，说明旧 dashboard 仍在运行；回到旧 dashboard 窗口按 `Ctrl+C` 后再启动。若检测到多个 CH340，脚本不会猜测 COM 口，而是只启动网页并打印候选端口；按第 4.1 节人工确认实际端口。
+
 ### 2.1 物理和进程前提
 
 1. 将 D435i A 直连 USB 3.x 数据口；A4 六 ArUco 参考板、纸面与红方块应处于同一平面。
