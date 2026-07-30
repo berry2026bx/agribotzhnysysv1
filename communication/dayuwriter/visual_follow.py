@@ -25,7 +25,10 @@ from .workspace import split_delta
 
 
 MIN_FOLLOW_DELTA_MM = 1.0
-MAX_P0_FOLLOW_OFFSET_MM = 60.0
+MIN_P0_FOLLOW_X_MM = -190.0
+MAX_P0_FOLLOW_X_MM = 190.0
+MIN_P0_FOLLOW_Y_MM = -90.0
+MAX_P0_FOLLOW_Y_MM = 140.0
 MAX_Z_DROP_MM = 1.0
 REQUIRED_STABLE_TARGET_SAMPLES = 3
 MAX_STABLE_TARGET_SPREAD_MM = 1.0
@@ -151,9 +154,14 @@ def _validate_target_within_p0_envelope(
 ) -> None:
     delta_x_mm = target.x_mm - p0_baseline.x_mm
     delta_y_mm = target.y_mm - p0_baseline.y_mm
-    if abs(delta_x_mm) > MAX_P0_FOLLOW_OFFSET_MM or abs(delta_y_mm) > MAX_P0_FOLLOW_OFFSET_MM:
+    if not (
+        MIN_P0_FOLLOW_X_MM <= delta_x_mm <= MAX_P0_FOLLOW_X_MM
+        and MIN_P0_FOLLOW_Y_MM <= delta_y_mm <= MAX_P0_FOLLOW_Y_MM
+    ):
         raise VisualFollowError(
-            f"visual target must be within +/-{MAX_P0_FOLLOW_OFFSET_MM:g} mm of P0 per axis"
+            "visual target must be within "
+            f"X [{MIN_P0_FOLLOW_X_MM:g}, {MAX_P0_FOLLOW_X_MM:g}] mm; "
+            f"Y [{MIN_P0_FOLLOW_Y_MM:g}, {MAX_P0_FOLLOW_Y_MM:g}] mm relative to P0"
         )
 
 
@@ -285,17 +293,19 @@ def execute_continuous_follow(
     return_to_p0: bool = False,
     hold_at_target_s: float = 0.0,
     wait_for_target_change: bool = False,
+    until_stopped: bool = False,
     dashboard_url: str = "http://127.0.0.1:8765/state.json",
     feed_mm_min: float = 50.0,
     fetcher: Callable[[str], Mapping[str, Any]] = fetch_dashboard_state,
     controller_factory: Callable[[str], GrblController] = GrblController,
     sleeper: Callable[[float], None] = time.sleep,
+    stop_requested: Callable[[], bool] | None = None,
 ) -> tuple[Any, ...]:
     """Follow stable target changes for a finite, explicitly bounded session."""
 
-    if not 1 <= max_moves <= 10:
+    if not until_stopped and not 1 <= max_moves <= 10:
         raise VisualFollowError("continuous follow max_moves must be within [1, 10]")
-    if not 3 <= max_observations <= 1440:
+    if not until_stopped and not 3 <= max_observations <= 1440:
         raise VisualFollowError("continuous follow max_observations must be within [3, 1440]")
     try:
         hold_at_target_s = float(hold_at_target_s)
@@ -305,9 +315,15 @@ def execute_continuous_follow(
         raise VisualFollowError("hold_at_target_s must be within [0, 10]")
     if hold_at_target_s > 0.0 and not return_to_p0:
         raise VisualFollowError("hold_at_target_s requires return_to_p0")
+    if stop_requested is None:
+        stop_requested = lambda: False
     session = ContinuousFollowSession(p0_baseline, feed_mm_min=feed_mm_min)
     if wait_for_target_change:
-        for arm_attempt in range(max_observations):
+        arm_attempt = 0
+        while until_stopped or arm_attempt < max_observations:
+            if stop_requested():
+                return ()
+            arm_attempt += 1
             try:
                 session.mark_returned_to_p0(
                     fetch_ready_live_target(
@@ -318,7 +334,7 @@ def execute_continuous_follow(
                     )
                 )
             except VisualFollowError:
-                if arm_attempt + 1 < max_observations:
+                if until_stopped or arm_attempt < max_observations:
                     sleeper(0.25)
                 continue
             break
@@ -326,8 +342,12 @@ def execute_continuous_follow(
             raise VisualFollowError("unable to arm after waiting for a ready visual target")
     results: list[Any] = []
     completed_moves = 0
+    observation_index = 0
     with controller_factory(port) as controller:
-        for observation_index in range(max_observations):
+        while until_stopped or observation_index < max_observations:
+            if stop_requested():
+                break
+            observation_index += 1
             try:
                 target = fetch_ready_live_target(
                     dashboard_url,
@@ -336,7 +356,7 @@ def execute_continuous_follow(
                     sleeper=sleeper,
                 )
             except VisualFollowError:
-                if observation_index + 1 < max_observations:
+                if until_stopped or observation_index < max_observations:
                     sleeper(0.25)
                 continue
             candidate = session.observe(target)
@@ -358,9 +378,9 @@ def execute_continuous_follow(
                     for command in return_proposal.commands:
                         results.append(controller.jog(command))
                     session.mark_returned_to_p0(stable_target)
-                if completed_moves >= max_moves:
+                if not until_stopped and completed_moves >= max_moves:
                     break
-            if observation_index + 1 < max_observations:
+            if until_stopped or observation_index < max_observations:
                 sleeper(0.25)
     return tuple(results)
 
@@ -406,6 +426,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Arm at the current red target and wait until it changes before the first XY cycle",
     )
     parser.add_argument(
+        "--until-stopped",
+        action="store_true",
+        help="Repeat supervised continuous cycles until interrupted; retains the verified workspace and feed limits",
+    )
+    parser.add_argument(
         "--max-moves",
         type=int,
         default=1,
@@ -449,6 +474,8 @@ def run(
     """Print the visual proposal; serial is opened only for explicit execution."""
 
     try:
+        if getattr(args, "until_stopped", False) and not getattr(args, "continuous", False):
+            raise VisualFollowError("--until-stopped requires --continuous")
         baseline = FollowBaseline(args.baseline_x, args.baseline_y)
         z_drop_mm = getattr(args, "z_drop_mm", 0.0)
         if getattr(args, "continuous", False):
@@ -512,6 +539,7 @@ def _run_continuous_follow(
         return_to_p0=getattr(args, "return_to_p0", True),
         hold_at_target_s=getattr(args, "hold_at_target_seconds", 10.0),
         wait_for_target_change=getattr(args, "wait_for_target_change", False),
+        until_stopped=getattr(args, "until_stopped", False),
         fetcher=fetcher,
         controller_factory=controller_factory,
     )

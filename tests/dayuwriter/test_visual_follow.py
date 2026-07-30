@@ -81,24 +81,25 @@ def test_build_target_move_proposal_splits_xy_then_appends_z_drop() -> None:
     )
 
 
-@pytest.mark.parametrize("target", [LiveTarget(62.0, 0.169), LiveTarget(1.927, -61.0)])
-def test_build_target_move_proposal_rejects_target_outside_initial_demo_envelope(
+@pytest.mark.parametrize("target", [LiveTarget(192.927, 0.169), LiveTarget(1.927, -90.831)])
+def test_build_target_move_proposal_rejects_target_outside_verified_workspace(
     target: LiveTarget,
 ) -> None:
-    with pytest.raises(visual_follow.VisualFollowError, match="60 mm"):
+    with pytest.raises(visual_follow.VisualFollowError, match=r"X \[-190, 190\] mm; Y \[-90, 140\] mm"):
         visual_follow.build_target_move_proposal(
             FollowBaseline(1.927, 0.169),
             target,
         )
 
 
-def test_build_target_move_proposal_accepts_target_within_sixty_mm_of_p0() -> None:
+def test_build_target_move_proposal_accepts_target_within_verified_workspace() -> None:
     proposal = visual_follow.build_target_move_proposal(
-        FollowBaseline(1.927, 0.169),
-        LiveTarget(46.927, 0.169),
+        FollowBaseline(0.0, 0.0),
+        LiveTarget(87.0, 26.0),
     )
 
-    assert proposal.delta_x_mm == pytest.approx(45.0)
+    assert proposal.delta_x_mm == pytest.approx(87.0)
+    assert proposal.delta_y_mm == pytest.approx(26.0)
     assert all(abs(command.distance_mm) <= 5.0 for command in proposal.commands)
 
 
@@ -350,6 +351,45 @@ def test_execute_continuous_follow_allows_a_six_minute_observation_window() -> N
     assert controller.jog_calls == [JogCommand("X", 5.0, 50.0)]
 
 
+def test_execute_continuous_follow_until_stopped_ignores_normal_move_count() -> None:
+    controller = FakeController()
+    snapshots = iter(
+        [
+            *[ready_payload(x=6.927, y=0.169) for _ in range(3)],
+            *[ready_payload(x=10.927, y=0.169) for _ in range(3)],
+        ]
+    )
+    stop_checks = 0
+
+    def stop_requested() -> bool:
+        nonlocal stop_checks
+        stop_checks += 1
+        return stop_checks > 6
+
+    results = visual_follow.execute_continuous_follow(
+        "COM4",
+        FollowBaseline(1.927, 0.169),
+        max_moves=1,
+        max_observations=3,
+        return_to_p0=True,
+        until_stopped=True,
+        stop_requested=stop_requested,
+        fetcher=lambda _url: next(snapshots),
+        controller_factory=lambda _port: controller,
+        sleeper=lambda _seconds: None,
+    )
+
+    assert len(results) == 6
+    assert controller.jog_calls == [
+        JogCommand("X", 5.0, 50.0),
+        JogCommand("X", -5.0, 50.0),
+        JogCommand("X", 4.5, 50.0),
+        JogCommand("X", 4.5, 50.0),
+        JogCommand("X", -4.5, 50.0),
+        JogCommand("X", -4.5, 50.0),
+    ]
+
+
 def args(**overrides) -> Namespace:
     values = {
         "dashboard_url": "http://127.0.0.1:8765/state.json",
@@ -395,6 +435,14 @@ def test_parser_can_arm_without_replaying_the_current_red_target() -> None:
     assert parsed.wait_for_target_change is True
 
 
+def test_parser_can_enable_until_stopped_supervision() -> None:
+    parsed = visual_follow.build_parser().parse_args(
+        ["--baseline-x", "1.0", "--baseline-y", "2.0", "--continuous", "--until-stopped"]
+    )
+
+    assert parsed.until_stopped is True
+
+
 def test_preview_does_not_open_a_controller(capsys) -> None:
     factory_calls: list[str] = []
 
@@ -406,6 +454,15 @@ def test_preview_does_not_open_a_controller(capsys) -> None:
 
     assert factory_calls == []
     assert "preview only; no serial port opened" in capsys.readouterr().out
+
+
+def test_until_stopped_requires_continuous_mode(capsys) -> None:
+    assert visual_follow.run(
+        args(until_stopped=True),
+        fetcher=lambda _url: ready_payload(x=6.9, y=0.2),
+    ) == 2
+
+    assert "--until-stopped requires --continuous" in capsys.readouterr().err
 
 
 def test_execute_requires_the_physical_preflight_acknowledgement(capsys) -> None:

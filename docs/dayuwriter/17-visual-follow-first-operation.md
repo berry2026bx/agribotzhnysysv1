@@ -102,10 +102,10 @@ The session accepts only a `ready` dashboard with all reference checks intact.
 It requires three target samples whose X and Y spread is at most 1 mm. A brief
 camera, reference, or target interruption is skipped while waiting; it never
 creates a motion command from an invalid frame. It stops when the bounded
-observation window expires or when a target is more than 60 mm from the
-captured P0 visual baseline on either axis. Each session is
-bounded to at most 10 target-return cycles and 120 observations (about 30 s
-of sampling, plus the configured hold time for each completed cycle).
+observation window expires or when a target leaves the verified P0-relative
+workspace: X `[-190,190] mm`, Y `[-90,140] mm`. Each ordinary session is
+bounded to at most 10 target-return cycles and 1440 observations (about six
+minutes of sampling, plus the configured hold time for each completed cycle).
 
 Before each real session, physically confirm that the pen is at P0, 12 V is
 connected, the pen tip is suspended, the entire XY path is clear, and the
@@ -138,8 +138,8 @@ machine misses steps or vibrates.
   --physical-preflight
 ```
 
-The process must not be used for arbitrary targets outside the initial
-plus-or-minus 60 mm P0 envelope. Cut 12 V for a physical emergency stop.
+The process must not be used for targets outside the verified P0-relative
+workspace. Cut 12 V for a physical emergency stop.
 
 ## Armed Repeat Follow
 
@@ -163,6 +163,29 @@ and establish the current baseline again first.
   --wait-for-target-change `
   --max-moves 10 `
   --max-observations 1440 `
+  --execute `
+  --physical-preflight
+```
+
+## Until-Stopped Supervision
+
+`--until-stopped` removes only the ordinary session's time and cycle limits.
+It still requires stable real-time frames, P0-relative workspace validation,
+and the selected XY feed limit. It never enables Z motion. Start it from a
+visible PowerShell terminal so `Ctrl+C` is available; interruption can leave
+the pen away from P0, so inspect it and physically return to P0 before a new
+session.
+
+```powershell
+& "C:\Users\Administrator\.conda\envs\dayuwriter-control\python.exe" `
+  -m communication.dayuwriter.visual_follow `
+  --port COM4 `
+  --baseline-x 0 `
+  --baseline-y 0 `
+  --continuous `
+  --wait-for-target-change `
+  --until-stopped `
+  --feed 500 `
   --execute `
   --physical-preflight
 ```
