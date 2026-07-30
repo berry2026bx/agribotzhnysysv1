@@ -33,6 +33,7 @@
 9. [19-标定过程与经验](19-calibration-process-and-lessons.md)
 10. [20-项目全流程记录](20-project-end-to-end-record.md)
 11. [21-全新电脑部署指南](21-new-computer-deployment.md)
+12. [22-项目失败复盘与防复发记录](22-project-failure-postmortems.md)
 
 ## 原始证据
 
