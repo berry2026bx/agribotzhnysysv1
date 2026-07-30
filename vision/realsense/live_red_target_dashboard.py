@@ -779,7 +779,7 @@ h1{font-size:20px;margin:0 0 16px}h2{font-size:16px;margin:0 0 10px}pre{white-sp
   @media(max-width:1400px){main{grid-template-columns:minmax(0,1fr)}aside{max-width:960px}}
   </style></head><body><main><div id="stage"><img id="frame" alt="Live D435i RGB"><div id="box"></div><div id="target-label" aria-live="polite"></div><svg id="reference-overlay" viewBox="0 0 1280 720" aria-hidden="true"></svg></div>
 <aside><section id="target-coordinate" class="coordinate-readout" data-state="unavailable" aria-live="polite"><h2>目标相对 P0</h2><div class="coordinate-grid"><div><span class="coordinate-label">X</span><strong id="target-x" class="coordinate-value">--</strong><span class="coordinate-unit">mm</span></div><div><span class="coordinate-label">Y</span><strong id="target-y" class="coordinate-value">--</strong><span class="coordinate-unit">mm</span></div></div><p id="target-coordinate-state" class="coordinate-state">实时红方块坐标</p></section>
-<section><h1>Display-only red target</h1><p class="warn">No GRBL motion is available in this page.</p><pre id="state">starting</pre></section>
+<section><h1>Display-only red target</h1><p class="warn">No GRBL motion is available in this page.</p><details><summary>诊断状态</summary><pre id="state">starting</pre></details></section>
 <section id="reference-registration" class="registration"><h2>Reference board registration</h2><label><input id="registration-confirmation" type="checkbox"> I aligned P0, X+30 mm, and Y+30 mm, and secured the board.</label><button id="register-board" type="button" disabled>Register board</button></section>
 <section id="reference-status"><h2>Reference board</h2><pre id="reference-state">waiting for reference data</pre></section></aside></main>
 <script>
@@ -799,7 +799,7 @@ function renderTargetCoordinate(state){
   if(hasCoordinate){coordinateX.textContent=formatCoordinate(coordinate.x);coordinateY.textContent=formatCoordinate(coordinate.y);coordinateState.textContent='实时红方块坐标';coordinateCard.dataset.state='ready';return;}
   coordinateX.textContent='--';coordinateY.textContent='--';coordinateState.textContent=state.state==='no_target'?'未检测到有效红方块':'坐标不可用';coordinateCard.dataset.state='unavailable';
 }
-function formatCoordinate(value){const number=Number(value);return (number>=0?'+':'')+number.toFixed(2);}
+function formatCoordinate(value){const rounded=Math.round(Number(value));return (rounded>0?'+':'')+rounded;}
 async function refresh(){
   try{
     const response=await fetch('/state.json',{cache:'no-store'}); const state=await response.json();

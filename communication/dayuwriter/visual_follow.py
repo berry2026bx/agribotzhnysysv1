@@ -289,7 +289,12 @@ def execute_continuous_follow(
     completed_moves = 0
     with controller_factory(port) as controller:
         for observation_index in range(max_observations):
-            target = parse_live_target(fetcher(dashboard_url))
+            target = fetch_ready_live_target(
+                dashboard_url,
+                fetcher=fetcher,
+                attempts=3,
+                sleeper=sleeper,
+            )
             candidate = session.observe(target)
             if candidate is not None:
                 stable_target, proposal = candidate
@@ -327,7 +332,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--baseline-x", required=True, type=float, help="P0 visual baseline X in mm")
     parser.add_argument("--baseline-y", required=True, type=float, help="P0 visual baseline Y in mm")
-    parser.add_argument("--feed", type=float, default=50.0, help="XY feed in mm/min, maximum 500")
+    parser.add_argument("--feed", type=float, default=500.0, help="XY feed in mm/min, maximum 500")
     parser.add_argument("--port", help="Live CH340 COM port; required with --execute")
     parser.add_argument("--execute", action="store_true", help="Send the bounded proposal to GRBL")
     parser.add_argument(
@@ -354,8 +359,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--max-moves",
         type=int,
-        default=3,
-        help="Maximum successful XY corrections in continuous mode; maximum 10",
+        default=1,
+        help="Maximum successful XY corrections in continuous mode; default 1, maximum 10",
     )
     parser.add_argument(
         "--max-observations",
@@ -363,16 +368,25 @@ def build_parser() -> argparse.ArgumentParser:
         default=120,
         help="Maximum 250 ms target observations in continuous mode; maximum 240",
     )
-    parser.add_argument(
+    return_mode = parser.add_mutually_exclusive_group()
+    return_mode.add_argument(
         "--return-to-p0",
+        dest="return_to_p0",
         action="store_true",
-        help="After a normal continuous session, return XY to the armed P0 position",
+        help="After a normal continuous session, return XY to the armed P0 position (default)",
     )
+    return_mode.add_argument(
+        "--stay-at-target",
+        dest="return_to_p0",
+        action="store_false",
+        help="Keep XY at the target after a continuous session",
+    )
+    parser.set_defaults(return_to_p0=True)
     parser.add_argument(
         "--hold-at-target-seconds",
         type=float,
-        default=0.0,
-        help="Hold at the final target for 0 to 10 seconds before --return-to-p0",
+        default=10.0,
+        help="Hold at the final target for 0 to 10 seconds before returning to P0",
     )
     return parser
 
@@ -442,12 +456,12 @@ def _run_continuous_follow(
     results = execute_continuous_follow(
         args.port,
         baseline,
-        max_moves=getattr(args, "max_moves", 3),
+        max_moves=getattr(args, "max_moves", 1),
         max_observations=getattr(args, "max_observations", 120),
         dashboard_url=args.dashboard_url,
         feed_mm_min=args.feed,
-        return_to_p0=getattr(args, "return_to_p0", False),
-        hold_at_target_s=getattr(args, "hold_at_target_seconds", 0.0),
+        return_to_p0=getattr(args, "return_to_p0", True),
+        hold_at_target_s=getattr(args, "hold_at_target_seconds", 10.0),
         fetcher=fetcher,
         controller_factory=controller_factory,
     )

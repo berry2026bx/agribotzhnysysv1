@@ -229,6 +229,14 @@ def test_dashboard_page_draws_live_machine_xy_next_to_target_box() -> None:
     assert "targetLabel.style.top" in page
 
 
+def test_dashboard_page_displays_machine_coordinates_as_integers() -> None:
+    page = _html_page()
+
+    assert "function formatCoordinate(value){const rounded=Math.round(Number(value));return (rounded>0?'+':'')+rounded;}" in page
+    assert "number.toFixed(2)" not in page
+    assert '<details><summary>诊断状态</summary><pre id="state">starting</pre></details>' in page
+
+
 def test_dashboard_page_styles_target_label_as_translucent_annotation() -> None:
     page = _html_page()
 

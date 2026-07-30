@@ -206,6 +206,31 @@ def test_execute_continuous_follow_holds_ten_seconds_before_returning_to_p0() ->
     assert waits.count(10.0) == 1
 
 
+def test_execute_continuous_follow_retries_one_transient_unmapped_frame() -> None:
+    controller = FakeController()
+    snapshots = iter(
+        [
+            {"state": "ready", "mapping_state": "unavailable", "motion_permission": "display_only"},
+            *[ready_payload(x=6.927, y=0.169) for _ in range(3)],
+        ]
+    )
+    waits: list[float] = []
+
+    results = visual_follow.execute_continuous_follow(
+        "COM4",
+        FollowBaseline(1.927, 0.169),
+        max_moves=1,
+        max_observations=3,
+        fetcher=lambda _url: next(snapshots),
+        controller_factory=lambda _port: controller,
+        sleeper=waits.append,
+    )
+
+    assert len(results) == 1
+    assert controller.jog_calls == [JogCommand("X", 5.0, 50.0)]
+    assert waits[0] == 0.1
+
+
 def args(**overrides) -> Namespace:
     values = {
         "dashboard_url": "http://127.0.0.1:8765/state.json",
@@ -223,6 +248,17 @@ def args(**overrides) -> Namespace:
     }
     values.update(overrides)
     return Namespace(**values)
+
+
+def test_parser_defaults_continuous_demo_to_fast_one_target_return() -> None:
+    parsed = visual_follow.build_parser().parse_args(
+        ["--baseline-x", "1.0", "--baseline-y", "2.0", "--continuous"]
+    )
+
+    assert parsed.feed == 500.0
+    assert parsed.max_moves == 1
+    assert parsed.return_to_p0 is True
+    assert parsed.hold_at_target_seconds == 10.0
 
 
 def test_preview_does_not_open_a_controller(capsys) -> None:
