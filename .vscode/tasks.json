@@ -67,29 +67,6 @@
         "panel": "dedicated",
         "clear": true
       }
-    },
-    {
-      "label": "DayuWriter: Arm automatic visual follow from P0",
-      "type": "shell",
-      "command": "powershell.exe",
-      "args": [
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-File",
-        "${workspaceFolder}\\scripts\\start_dayuwriter_auto_follow.ps1",
-        "-ArmAtP0"
-      ],
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": [],
-      "presentation": {
-        "reveal": "always",
-        "focus": true,
-        "panel": "dedicated",
-        "clear": true
-      }
     }
   ]
 }
