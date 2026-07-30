@@ -92,16 +92,17 @@ physical encoder measurement.
 
 ## Finite XY Follow Session
 
-This mode starts only after the pen has been physically aligned to P0. It
-then retains the last successfully commanded XY target, so a subsequent stable
-red-square change is an incremental correction rather than another P0-relative
-move. It does not lower Z.
+This mode starts only after the pen has been physically aligned to P0. With
+the default return mode, every successful target cycle is P0-to-target, a
+10-second hold, and target-to-P0; it does not lower Z. The next cycle is armed
+only after the red square has visibly changed, so an unmoved target is not
+replayed repeatedly.
 
 The session accepts only a `ready` dashboard with all reference checks intact.
 It requires three target samples whose X and Y spread is at most 1 mm. It
 stops on a camera/reference/target failure or when a target is more than
-60 mm from the captured P0 visual baseline on either axis. A first session is
-limited to three successful corrections and 120 observations (about 30 s).
+60 mm from the captured P0 visual baseline on either axis. Each session is
+bounded to at most 10 target-return cycles and 120 observations (about 30 s).
 
 Before each real session, physically confirm that the pen is at P0, 12 V is
 connected, the pen tip is suspended, the entire XY path is clear, and the
@@ -109,14 +110,14 @@ camera, A4 board, and paper have not moved. A manual push, power/USB loss,
 GRBL reset, serial error, or suspected lost step invalidates the assumed pose;
 stop and physically return to P0 before another session.
 
-With `--return-to-p0`, the program sends a final XY-only return from the last
-successfully commanded target to the armed P0 position after a normal session
-end. It does not return after a target/reference/serial/controller error. The
-outbound and return routes must both be clear before starting. The command
-below uses 500 mm/min, the current bounded XY commissioning limit. The live
-GRBL configuration reports `$110=$111=2000 mm/min`, but that configuration
-value alone does not prove the mechanics can run stably at that speed; use a
-lower `--feed` value if the machine misses steps or vibrates.
+The default `--return-to-p0` mode sends its XY-only return after every
+successful target, not only when the session ends. It does not return after a
+target/reference/serial/controller error. The outbound and return routes must
+both be clear before starting. The command below uses 500 mm/min, the current
+bounded XY commissioning limit. The live GRBL configuration reports
+`$110=$111=2000 mm/min`, but that configuration value alone does not prove the
+mechanics can run stably at that speed; use a lower `--feed` value if the
+machine misses steps or vibrates.
 
 ```powershell
 & "C:\Users\Administrator\.conda\envs\dayuwriter-control\python.exe" `
@@ -136,3 +137,28 @@ lower `--feed` value if the machine misses steps or vibrates.
 
 The process must not be used for arbitrary targets outside the initial
 plus-or-minus 60 mm P0 envelope. Cut 12 V for a physical emergency stop.
+
+## Armed Repeat Follow
+
+To leave the pen at P0 and wait for the next red-square placement, add
+`--wait-for-target-change`. Startup records the existing target but sends no
+motion. A new target must differ from that recorded target by at least 1 mm on
+X or Y and remain stable for three samples before the first cycle begins.
+
+The following current-setup command permits up to 10 supervised cycles. It
+uses this currently registered A4-board P0 mapping. Do not use it after the
+camera, board, paper, or physical P0 alignment has moved; validate the mapping
+and establish the current baseline again first.
+
+```powershell
+& "C:\Users\Administrator\.conda\envs\dayuwriter-control\python.exe" `
+  -m communication.dayuwriter.visual_follow `
+  --port COM4 `
+  --baseline-x 0 `
+  --baseline-y 0 `
+  --continuous `
+  --wait-for-target-change `
+  --max-moves 10 `
+  --execute `
+  --physical-preflight
+```

@@ -68,12 +68,18 @@ class ContinuousFollowSession:
         self._p0_baseline = p0_baseline
         self._commanded_position = p0_baseline
         self._recent_targets: list[LiveTarget] = []
+        self._last_returned_target: LiveTarget | None = None
         self._feed_mm_min = feed_mm_min
 
     def observe(self, target: LiveTarget) -> tuple[LiveTarget, FollowProposal] | None:
         """Return a proposal only after three tight, ready target samples."""
 
         _validate_point("target", target.x_mm, target.y_mm)
+        if self._last_returned_target is not None and not _target_changed(
+            self._last_returned_target, target
+        ):
+            self._recent_targets.clear()
+            return None
         self._recent_targets.append(target)
         if len(self._recent_targets) > REQUIRED_STABLE_TARGET_SAMPLES:
             self._recent_targets.pop(0)
@@ -101,6 +107,13 @@ class ContinuousFollowSession:
             target.y_mm if "Y" in moved_axes else self._commanded_position.y_mm,
         )
 
+    def mark_returned_to_p0(self, completed_target: LiveTarget) -> None:
+        """Arm the next cycle only after the target has visibly changed."""
+
+        self._commanded_position = self._p0_baseline
+        self._recent_targets.clear()
+        self._last_returned_target = completed_target
+
     @property
     def commanded_position(self) -> FollowBaseline:
         """The estimated XY position after successful controller completions."""
@@ -114,6 +127,13 @@ def _targets_are_stable(targets: Sequence[LiveTarget]) -> bool:
         <= MAX_STABLE_TARGET_SPREAD_MM
         and max(target.y_mm for target in targets) - min(target.y_mm for target in targets)
         <= MAX_STABLE_TARGET_SPREAD_MM
+    )
+
+
+def _target_changed(previous: LiveTarget, current: LiveTarget) -> bool:
+    return (
+        abs(current.x_mm - previous.x_mm) >= MIN_FOLLOW_DELTA_MM
+        or abs(current.y_mm - previous.y_mm) >= MIN_FOLLOW_DELTA_MM
     )
 
 
@@ -264,6 +284,7 @@ def execute_continuous_follow(
     max_observations: int,
     return_to_p0: bool = False,
     hold_at_target_s: float = 0.0,
+    wait_for_target_change: bool = False,
     dashboard_url: str = "http://127.0.0.1:8765/state.json",
     feed_mm_min: float = 50.0,
     fetcher: Callable[[str], Mapping[str, Any]] = fetch_dashboard_state,
@@ -285,6 +306,15 @@ def execute_continuous_follow(
     if hold_at_target_s > 0.0 and not return_to_p0:
         raise VisualFollowError("hold_at_target_s requires return_to_p0")
     session = ContinuousFollowSession(p0_baseline, feed_mm_min=feed_mm_min)
+    if wait_for_target_change:
+        session.mark_returned_to_p0(
+            fetch_ready_live_target(
+                dashboard_url,
+                fetcher=fetcher,
+                attempts=3,
+                sleeper=sleeper,
+            )
+        )
     results: list[Any] = []
     completed_moves = 0
     with controller_factory(port) as controller:
@@ -302,22 +332,22 @@ def execute_continuous_follow(
                     results.append(controller.jog(command))
                 session.mark_executed(stable_target, proposal)
                 completed_moves += 1
-                if completed_moves >= max_moves:
+                if return_to_p0:
                     if hold_at_target_s > 0.0:
                         sleeper(hold_at_target_s)
+                    return_target = LiveTarget(p0_baseline.x_mm, p0_baseline.y_mm)
+                    return_proposal = build_target_move_proposal(
+                        session.commanded_position,
+                        return_target,
+                        feed_mm_min=feed_mm_min,
+                    )
+                    for command in return_proposal.commands:
+                        results.append(controller.jog(command))
+                    session.mark_returned_to_p0(stable_target)
+                if completed_moves >= max_moves:
                     break
             if observation_index + 1 < max_observations:
                 sleeper(0.25)
-        if return_to_p0:
-            return_target = LiveTarget(p0_baseline.x_mm, p0_baseline.y_mm)
-            return_proposal = build_target_move_proposal(
-                session.commanded_position,
-                return_target,
-                feed_mm_min=feed_mm_min,
-            )
-            for command in return_proposal.commands:
-                results.append(controller.jog(command))
-            session.mark_executed(return_target, return_proposal)
     return tuple(results)
 
 
@@ -355,6 +385,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--continuous",
         action="store_true",
         help="Follow stable red-target changes in XY only for a finite session",
+    )
+    parser.add_argument(
+        "--wait-for-target-change",
+        action="store_true",
+        help="Arm at the current red target and wait until it changes before the first XY cycle",
     )
     parser.add_argument(
         "--max-moves",
@@ -462,6 +497,7 @@ def _run_continuous_follow(
         feed_mm_min=args.feed,
         return_to_p0=getattr(args, "return_to_p0", True),
         hold_at_target_s=getattr(args, "hold_at_target_seconds", 10.0),
+        wait_for_target_change=getattr(args, "wait_for_target_change", False),
         fetcher=fetcher,
         controller_factory=controller_factory,
     )

@@ -206,6 +206,68 @@ def test_execute_continuous_follow_holds_ten_seconds_before_returning_to_p0() ->
     assert waits.count(10.0) == 1
 
 
+def test_execute_continuous_follow_returns_to_p0_between_changed_targets() -> None:
+    controller = FakeController()
+    snapshots = iter(
+        [
+            *[ready_payload(x=6.927, y=0.169) for _ in range(3)],
+            *[ready_payload(x=10.927, y=0.169) for _ in range(3)],
+        ]
+    )
+
+    results = visual_follow.execute_continuous_follow(
+        "COM4",
+        FollowBaseline(1.927, 0.169),
+        max_moves=2,
+        max_observations=6,
+        return_to_p0=True,
+        fetcher=lambda _url: next(snapshots),
+        controller_factory=lambda _port: controller,
+        sleeper=lambda _seconds: None,
+    )
+
+    assert len(results) == 6
+    assert controller.jog_calls == [
+        JogCommand("X", 5.0, 50.0),
+        JogCommand("X", -5.0, 50.0),
+        JogCommand("X", 4.5, 50.0),
+        JogCommand("X", 4.5, 50.0),
+        JogCommand("X", -4.5, 50.0),
+        JogCommand("X", -4.5, 50.0),
+    ]
+
+
+def test_execute_continuous_follow_can_arm_at_current_target_and_wait_for_change() -> None:
+    controller = FakeController()
+    snapshots = iter(
+        [
+            ready_payload(x=6.927, y=0.169),
+            *[ready_payload(x=6.927, y=0.169) for _ in range(3)],
+            *[ready_payload(x=10.927, y=0.169) for _ in range(3)],
+        ]
+    )
+
+    results = visual_follow.execute_continuous_follow(
+        "COM4",
+        FollowBaseline(1.927, 0.169),
+        max_moves=1,
+        max_observations=6,
+        return_to_p0=True,
+        wait_for_target_change=True,
+        fetcher=lambda _url: next(snapshots),
+        controller_factory=lambda _port: controller,
+        sleeper=lambda _seconds: None,
+    )
+
+    assert len(results) == 4
+    assert controller.jog_calls == [
+        JogCommand("X", 4.5, 50.0),
+        JogCommand("X", 4.5, 50.0),
+        JogCommand("X", -4.5, 50.0),
+        JogCommand("X", -4.5, 50.0),
+    ]
+
+
 def test_execute_continuous_follow_retries_one_transient_unmapped_frame() -> None:
     controller = FakeController()
     snapshots = iter(
@@ -259,6 +321,21 @@ def test_parser_defaults_continuous_demo_to_fast_one_target_return() -> None:
     assert parsed.max_moves == 1
     assert parsed.return_to_p0 is True
     assert parsed.hold_at_target_seconds == 10.0
+
+
+def test_parser_can_arm_without_replaying_the_current_red_target() -> None:
+    parsed = visual_follow.build_parser().parse_args(
+        [
+            "--baseline-x",
+            "1.0",
+            "--baseline-y",
+            "2.0",
+            "--continuous",
+            "--wait-for-target-change",
+        ]
+    )
+
+    assert parsed.wait_for_target_change is True
 
 
 def test_preview_does_not_open_a_controller(capsys) -> None:
