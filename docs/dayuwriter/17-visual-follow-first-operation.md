@@ -99,9 +99,11 @@ only after the red square has visibly changed, so an unmoved target is not
 replayed repeatedly.
 
 The session accepts only a `ready` dashboard with all reference checks intact.
-It requires three target samples whose X and Y spread is at most 1 mm. It
-stops on a camera/reference/target failure or when a target is more than
-60 mm from the captured P0 visual baseline on either axis. Each session is
+It requires three target samples whose X and Y spread is at most 1 mm. A brief
+camera, reference, or target interruption is skipped while waiting; it never
+creates a motion command from an invalid frame. It stops when the bounded
+observation window expires or when a target is more than 60 mm from the
+captured P0 visual baseline on either axis. Each session is
 bounded to at most 10 target-return cycles and 120 observations (about 30 s
 of sampling, plus the configured hold time for each completed cycle).
 
@@ -160,6 +162,7 @@ and establish the current baseline again first.
   --continuous `
   --wait-for-target-change `
   --max-moves 10 `
+  --max-observations 1440 `
   --execute `
   --physical-preflight
 ```

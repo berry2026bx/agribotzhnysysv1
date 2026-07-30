@@ -237,6 +237,15 @@ def test_dashboard_page_displays_machine_coordinates_as_integers() -> None:
     assert '<details><summary>诊断状态</summary><pre id="state">starting</pre></details>' in page
 
 
+def test_dashboard_page_holds_the_last_coordinate_through_a_brief_mapping_gap() -> None:
+    page = _html_page()
+
+    assert "const COORDINATE_DISPLAY_GRACE_MS=1500" in page
+    assert "let lastValidCoordinate=null;" in page
+    assert "lastValidCoordinate&&state.target&&Date.now()-lastValidCoordinate.observedAtMs<=COORDINATE_DISPLAY_GRACE_MS" in page
+    assert "coordinateCard.dataset.state='stale'" in page
+
+
 def test_dashboard_page_styles_target_label_as_translucent_annotation() -> None:
     page = _html_page()
 

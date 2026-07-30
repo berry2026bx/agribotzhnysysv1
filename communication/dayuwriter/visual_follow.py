@@ -295,8 +295,8 @@ def execute_continuous_follow(
 
     if not 1 <= max_moves <= 10:
         raise VisualFollowError("continuous follow max_moves must be within [1, 10]")
-    if not 3 <= max_observations <= 240:
-        raise VisualFollowError("continuous follow max_observations must be within [3, 240]")
+    if not 3 <= max_observations <= 1440:
+        raise VisualFollowError("continuous follow max_observations must be within [3, 1440]")
     try:
         hold_at_target_s = float(hold_at_target_s)
     except (TypeError, ValueError) as exc:
@@ -307,24 +307,38 @@ def execute_continuous_follow(
         raise VisualFollowError("hold_at_target_s requires return_to_p0")
     session = ContinuousFollowSession(p0_baseline, feed_mm_min=feed_mm_min)
     if wait_for_target_change:
-        session.mark_returned_to_p0(
-            fetch_ready_live_target(
-                dashboard_url,
-                fetcher=fetcher,
-                attempts=3,
-                sleeper=sleeper,
-            )
-        )
+        for arm_attempt in range(max_observations):
+            try:
+                session.mark_returned_to_p0(
+                    fetch_ready_live_target(
+                        dashboard_url,
+                        fetcher=fetcher,
+                        attempts=3,
+                        sleeper=sleeper,
+                    )
+                )
+            except VisualFollowError:
+                if arm_attempt + 1 < max_observations:
+                    sleeper(0.25)
+                continue
+            break
+        else:
+            raise VisualFollowError("unable to arm after waiting for a ready visual target")
     results: list[Any] = []
     completed_moves = 0
     with controller_factory(port) as controller:
         for observation_index in range(max_observations):
-            target = fetch_ready_live_target(
-                dashboard_url,
-                fetcher=fetcher,
-                attempts=3,
-                sleeper=sleeper,
-            )
+            try:
+                target = fetch_ready_live_target(
+                    dashboard_url,
+                    fetcher=fetcher,
+                    attempts=3,
+                    sleeper=sleeper,
+                )
+            except VisualFollowError:
+                if observation_index + 1 < max_observations:
+                    sleeper(0.25)
+                continue
             candidate = session.observe(target)
             if candidate is not None:
                 stable_target, proposal = candidate
@@ -401,7 +415,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--max-observations",
         type=int,
         default=120,
-        help="Maximum 250 ms target observations in continuous mode; maximum 240",
+        help="Maximum 250 ms target observations in continuous mode; maximum 1440",
     )
     return_mode = parser.add_mutually_exclusive_group()
     return_mode.add_argument(

@@ -268,6 +268,45 @@ def test_execute_continuous_follow_can_arm_at_current_target_and_wait_for_change
     ]
 
 
+def test_execute_continuous_follow_arms_after_a_transient_mapping_outage() -> None:
+    controller = FakeController()
+    snapshots = iter(
+        [
+            *[
+                {
+                    "state": "ready",
+                    "mapping_state": "unavailable",
+                    "motion_permission": "display_only",
+                }
+                for _ in range(3)
+            ],
+            ready_payload(x=6.927, y=0.169),
+            *[ready_payload(x=6.927, y=0.169) for _ in range(3)],
+            *[ready_payload(x=10.927, y=0.169) for _ in range(3)],
+        ]
+    )
+
+    results = visual_follow.execute_continuous_follow(
+        "COM4",
+        FollowBaseline(1.927, 0.169),
+        max_moves=1,
+        max_observations=8,
+        return_to_p0=True,
+        wait_for_target_change=True,
+        fetcher=lambda _url: next(snapshots),
+        controller_factory=lambda _port: controller,
+        sleeper=lambda _seconds: None,
+    )
+
+    assert len(results) == 4
+    assert controller.jog_calls == [
+        JogCommand("X", 4.5, 50.0),
+        JogCommand("X", 4.5, 50.0),
+        JogCommand("X", -4.5, 50.0),
+        JogCommand("X", -4.5, 50.0),
+    ]
+
+
 def test_execute_continuous_follow_retries_one_transient_unmapped_frame() -> None:
     controller = FakeController()
     snapshots = iter(
@@ -291,6 +330,24 @@ def test_execute_continuous_follow_retries_one_transient_unmapped_frame() -> Non
     assert len(results) == 1
     assert controller.jog_calls == [JogCommand("X", 5.0, 50.0)]
     assert waits[0] == 0.1
+
+
+def test_execute_continuous_follow_allows_a_six_minute_observation_window() -> None:
+    controller = FakeController()
+    snapshots = iter([ready_payload(x=6.927, y=0.169) for _ in range(3)])
+
+    results = visual_follow.execute_continuous_follow(
+        "COM4",
+        FollowBaseline(1.927, 0.169),
+        max_moves=1,
+        max_observations=1440,
+        fetcher=lambda _url: next(snapshots),
+        controller_factory=lambda _port: controller,
+        sleeper=lambda _seconds: None,
+    )
+
+    assert len(results) == 1
+    assert controller.jog_calls == [JogCommand("X", 5.0, 50.0)]
 
 
 def args(**overrides) -> Namespace:
