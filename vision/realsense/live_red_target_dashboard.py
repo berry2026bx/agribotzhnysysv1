@@ -575,7 +575,12 @@ def run_camera_worker(
             snapshot_state(None, None, error=f"camera_runtime_failed: {exc}"),
         )
     finally:
-        pipeline.stop()
+        # A failed start/frame transition can leave librealsense reporting that
+        # the pipeline is not started; never mask the original runtime error.
+        try:
+            pipeline.stop()
+        except Exception:
+            pass
 
 
 def build_parser() -> argparse.ArgumentParser:

@@ -1,19 +1,23 @@
 import numpy as np
 import pytest
+import sys
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 from http.server import ThreadingHTTPServer
-from threading import Thread
+from threading import Event, Thread
 
 from vision.realsense.aruco_reference_board import default_layout
 from vision.realsense.live_red_target_dashboard import (
     ArucoReferenceTracker,
     BoardRegistrationService,
+    Calibration,
     DashboardError,
+    RedTargetConfig,
     SnapshotStore,
     _html_page,
     _make_handler,
     reference_snapshot_state,
+    run_camera_worker,
 )
 
 
@@ -115,6 +119,61 @@ def test_tracker_rejects_non_finite_marker_corners() -> None:
 
     assert status.state == "reference_lost"
     assert status.matrix_pixel_to_machine is None
+
+
+def test_camera_worker_does_not_mask_runtime_error_when_pipeline_stop_also_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakePipeline:
+        def start(self, config: object) -> object:
+            return object()
+
+        def wait_for_frames(self) -> object:
+            raise RuntimeError("Frame didn't arrive within 5000")
+
+        def stop(self) -> None:
+            raise RuntimeError("stop() cannot be called before start()")
+
+    class FakeConfig:
+        def enable_device(self, serial: str) -> None:
+            assert serial == "camera-a"
+
+        def enable_stream(self, *args: object) -> None:
+            return None
+
+    class FakeStream:
+        depth = object()
+        color = object()
+
+    class FakeFormat:
+        z16 = object()
+        rgb8 = object()
+
+    class FakeRealSense:
+        pipeline = FakePipeline
+        config = FakeConfig
+        stream = FakeStream
+        format = FakeFormat
+
+        class align:
+            def __init__(self, stream: object) -> None:
+                self.stream = stream
+
+    monkeypatch.setitem(sys.modules, "pyrealsense2", FakeRealSense())
+    store = SnapshotStore()
+
+    run_camera_worker(
+        store,
+        Event(),
+        calibration=Calibration(serial="camera-a", pixel_to_machine=None),
+        target_config=RedTargetConfig(),
+        warmup_frames=1,
+        depth_sample_radius=1,
+    )
+
+    snapshot = store.read().state
+    assert snapshot["state"] == "camera_error"
+    assert "Frame didn't arrive" in snapshot["error"]
 
 
 def test_registration_service_writes_display_only_record_and_unblocks_tracker(tmp_path) -> None:
