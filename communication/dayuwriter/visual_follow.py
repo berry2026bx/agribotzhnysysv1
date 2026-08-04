@@ -334,6 +334,7 @@ def execute_continuous_follow(
     controller_factory: Callable[[str], GrblController] = GrblController,
     sleeper: Callable[[float], None] = time.sleep,
     stop_requested: Callable[[], bool] | None = None,
+    requested_class: str | None = None,
 ) -> tuple[Any, ...]:
     """Follow stable target changes for a finite, explicitly bounded session."""
 
@@ -365,6 +366,7 @@ def execute_continuous_follow(
                         fetcher=fetcher,
                         attempts=3,
                         sleeper=sleeper,
+                        requested_class=requested_class,
                     )
                 )
             except VisualFollowError:
@@ -388,6 +390,7 @@ def execute_continuous_follow(
                     fetcher=fetcher,
                     attempts=3,
                     sleeper=sleeper,
+                    requested_class=requested_class,
                 )
             except VisualFollowError:
                 if until_stopped or observation_index < max_observations:
@@ -581,6 +584,7 @@ def _run_continuous_follow(
         until_stopped=getattr(args, "until_stopped", False),
         fetcher=fetcher,
         controller_factory=controller_factory,
+        requested_class=getattr(args, "class_name", None),
     )
     if not results:
         print("continuous follow ended without a stable target correction")

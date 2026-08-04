@@ -43,3 +43,15 @@ def test_parse_yolo_target_rejects_missing_depth_xyz() -> None:
     payload["target"].pop("camera_xyz_mm")
     with pytest.raises(VisualFollowError, match="camera_xyz"):
         parse_live_target(payload, requested_class="bottle")
+
+
+def test_continuous_fetcher_receives_requested_class() -> None:
+    from communication.dayuwriter.visual_follow import fetch_ready_live_target
+
+    seen = []
+    target = fetch_ready_live_target(
+        "loopback",
+        fetcher=lambda _url: yolo_payload(),
+        requested_class="bottle",
+    )
+    assert target.requested_class == "bottle"

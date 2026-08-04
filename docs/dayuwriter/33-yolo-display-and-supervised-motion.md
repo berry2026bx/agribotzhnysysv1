@@ -22,7 +22,7 @@ dayuwriter-control 中已经验证 torch 2.13.0+cu126、GPU available True、NVI
 
 只有同时满足以下条件才运行运动：笔尖物理位于固定 P0；12 V 接通；笔尖悬空；去目标和返回 P0 的完整 XY 路径净空；Z 方向有余量；相机、纸张和 ArUco 板未移动；Viewer 已关闭；页面显示请求类别、稳定相机 XYZ、reference_state=ready、mapping_state=available；系统只发现一个 CH340。
 
-在同一个 VS Code 终端运行：
+在同一个 VS Code 终端运行（class-name 会在连续跟随的每次读取中强制过滤）：
 
     python -m communication.dayuwriter.visual_follow --dashboard-url http://127.0.0.1:8765/state.json --class-name bottle --port COM4 --baseline-x 0 --baseline-y 0 --continuous --max-moves 1 --max-observations 120 --return-to-p0 --hold-at-target-seconds 10 --feed 500 --execute --physical-preflight
 
