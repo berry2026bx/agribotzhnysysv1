@@ -10,6 +10,7 @@ Add a first YOLO demonstration path that detects a selected COCO object with a p
 - The existing plane mapping is valid only for the fixed camera pose and for points on the calibrated paper plane. It is not sufficient by itself for elevated objects because perspective causes a pixel-to-plane error.
 - `communication.dayuwriter.visual_follow` already validates `state=ready`, `mapping_state=available`, `motion_permission=display_only`, a fixed P0 baseline, stable target samples, bounded XY movement, optional bounded Z movement, and return-to-P0 behavior.
 - The installed `dayuwriter-control` environment has NumPy 2.4.6, pyrealsense2 2.58.3, and OpenCV contrib 4.13.0, but it does not currently have `torch` or `ultralytics`.
+- The current computer has an NVIDIA GeForce RTX 3060 with 12 GB VRAM and NVIDIA driver 595.71 (`nvidia-smi` reports CUDA capability 13.2). It is suitable for the small pretrained YOLO demonstration model. The PyTorch wheel's bundled CUDA runtime version, not the `nvidia-smi` CUDA capability string, determines the exact supported installation command.
 - Ultralytics documentation describes Python inference through `YOLO(...); results = model.predict(...); result.boxes.xyxy/conf/cls`, and states that the package/models are AGPL-3.0 or Enterprise licensed. This repository is for research/education; licensing must be reviewed before redistribution or closed-source deployment.
 - The first real-machine run must remain supervised. A dashboard label or a successful model inference is not evidence that a physical path is clear.
 
@@ -22,7 +23,7 @@ Add a first YOLO demonstration path that detects a selected COCO object with a p
 3. A YOLO dashboard mode that annotates the live RGB frame and publishes one selected target in JSON.
 4. Target localization using the D435i depth frame at the detection-box center with a finite-neighbor fallback.
 5. A camera-to-machine 3D transform derived from the ArUco reference board pose, with the target point projected onto the writer XY plane for the XY move and a separately reported height.
-6. Reuse of the existing P0-anchored supervised follow executor; no new direct serial protocol is introduced.
+6. Reuse of the existing P0-anchored supervised follow executor; it automatically discovers the one connected CH340 port after the operator explicitly arms a session, and introduces no new serial protocol.
 7. Offline/unit tests for detection parsing, target selection, finite-depth handling, 3D transform math, dashboard schema, and motion gating.
 8. Runbook updates explaining how to install the optional YOLO dependencies, download a pretrained model, run display-only mode, then explicitly arm supervised motion.
 
@@ -94,7 +95,7 @@ The snapshot contains `state`, `motion_permission`, `camera.serial`, `target.cla
 
 ### 5. Motion integration
 
-Do not let the dashboard open a serial port. Extend the existing follow parser to accept a generic target record only when:
+Do not let the dashboard itself open a serial port. The desktop launcher may automatically discover exactly one CH340 port and start the separate follow executor only after the operator explicitly arms a session. Extend the existing follow parser to accept a generic target record only when:
 
 - the requested class matches;
 - `state=ready`;
@@ -104,19 +105,19 @@ Do not let the dashboard open a serial port. Extend the existing follow parser t
 - P0 is the fixed physical baseline;
 - the target is inside the measured machine envelope;
 - `--execute` and `--physical-preflight` are both present;
-- a unique CH340 port is explicitly selected.
+- exactly one CH340 port is discovered and reported by the launcher.
 
 The follow executor sends XY first, optionally sends a configured `z_drop_mm` no larger than 1 mm, waits 10 seconds, and returns XY to P0. The default command remains display-only.
 
 ## CLI and user workflow
 
-1. Install optional inference dependencies in `dayuwriter-control`: `python -m pip install ultralytics` plus the Torch package appropriate for the computer's CPU/GPU.
+1. The operator installs optional inference dependencies in `dayuwriter-control`; the project must never try to install them automatically. For the RTX 3060 computer, open the official [PyTorch Get Started page](https://pytorch.org/get-started/locally/), select Stable / Windows / Pip / Python / CUDA, and copy the command that page generates for the current supported CUDA wheel. Then run `python -m pip install ultralytics`. A separately installed CUDA Toolkit is not required for standard PyTorch pip wheels.
 2. Place a pretrained model such as `yolo11n.pt` or the currently supported small detection model in a user-owned models directory. The first Ultralytics load may download the weight file.
 3. Start the YOLO dashboard with a serial number, model path, class name, ArUco registration, and a non-motion port.
 4. Verify the page shows the expected class, confidence, pixel center, finite camera XYZ, machine XY, and a valid reference state.
 5. Run a preview command that prints the proposed delta without a COM port.
-6. Only after physical preflight, run one explicit execution command.
-7. Inspect the physical result and the `/state.json`/terminal log. Stop the process with Ctrl+C if anything differs from the expected path.
+6. In the desktop launcher, confirm the physical-P0 and path-clear checklist, then choose `Start YOLO automatic follow`. The launcher discovers the sole CH340 port, opens it in the separate executor, and runs the same target / 10-second hold / P0-return cycle automatically.
+7. Inspect the physical result and the `/state.json`/terminal log. The launcher must provide a `Stop automatic follow` control; stopping can leave the pen away from P0, so P0 must be physically re-confirmed before the next run.
 
 The exact commands belong in the implementation runbook after the CLI names and options are implemented.
 
