@@ -3,6 +3,7 @@ import numpy as np
 from vision.realsense.aruco_pose import BoardPose
 from vision.realsense.live_yolo_dashboard import (
     annotate_yolo_frame,
+    build_parser,
     snapshot_yolo_state,
 )
 from vision.realsense.object_localization import CameraPoint, MachinePoint
@@ -65,3 +66,12 @@ def test_annotation_returns_same_shape_and_draws_target() -> None:
     annotated = annotate_yolo_frame(image, detection, {"x": 30.0, "y": 40.0})
     assert annotated.shape == image.shape
     assert int(annotated.sum()) > 0
+
+
+def test_dashboard_parser_requires_a_registration_record_path() -> None:
+    args = build_parser().parse_args(
+        ["--serial", "231122070403", "--model", "model.pt", "--class-name", "bottle"]
+    )
+    assert str(args.reference_registration).endswith(
+        "docs\\dayuwriter\\calibration\\camera-a-a4-aruco-registration.json"
+    )

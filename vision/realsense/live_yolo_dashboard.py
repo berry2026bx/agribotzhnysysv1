@@ -15,7 +15,7 @@ import cv2
 import numpy as np
 
 from .aruco_pose import BoardPose, estimate_board_pose, validate_board_pose
-from .aruco_reference_board import default_layout
+from .aruco_reference_board import BoardRegistrationError, default_layout, load_registration
 from .aruco_plane_calibration import detect_marker_corners
 from .object_localization import CameraPoint, MachinePoint, deproject_color_pixel, estimate_depth_m, transform_camera_to_writer
 from ..yolo.detector import Detection, DetectorConfig, YoloDetector, select_target
@@ -161,6 +161,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--confidence", type=float, default=0.5)
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--warmup-frames", type=int, default=30)
+    parser.add_argument(
+        "--reference-registration",
+        type=Path,
+        default=Path("docs/dayuwriter/calibration/camera-a-a4-aruco-registration.json"),
+        help="Operator-confirmed fixed P0/ArUco registration record",
+    )
     return parser
 
 
@@ -168,13 +174,17 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         detector = YoloDetector(DetectorConfig(str(args.model), confidence=args.confidence))
+        registration = load_registration(args.reference_registration, default_layout())
     except (RuntimeError, ValueError) as exc:
         print(f"YOLO dashboard failed: {exc}")
+        return 1
+    except BoardRegistrationError as exc:
+        print(f"YOLO dashboard failed: reference registration invalid: {exc}")
         return 1
     store = SnapshotStore()
     stop_event = threading.Event()
     server = ThreadingHTTPServer(("127.0.0.1", args.port), _handler(store))
-    worker = threading.Thread(target=_camera_worker, args=(store, stop_event, detector, args.serial, args.class_name, args.warmup_frames), daemon=True)
+    worker = threading.Thread(target=_camera_worker, args=(store, stop_event, detector, args.serial, args.class_name, args.warmup_frames, registration), daemon=True)
     worker.start()
     print(f"YOLO display-only dashboard: http://127.0.0.1:{args.port}/")
     try:
@@ -186,7 +196,7 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-def _camera_worker(store: SnapshotStore, stop_event: threading.Event, detector: YoloDetector, serial: str, class_name: str, warmup_frames: int) -> None:
+def _camera_worker(store: SnapshotStore, stop_event: threading.Event, detector: YoloDetector, serial: str, class_name: str, warmup_frames: int, registration: dict[str, object]) -> None:
     try:
         import pyrealsense2 as rs
         pipeline = rs.pipeline(); config = rs.config(); config.enable_device(serial)
@@ -195,6 +205,8 @@ def _camera_worker(store: SnapshotStore, stop_event: threading.Event, detector: 
         profile = pipeline.start(config); align = rs.align(rs.stream.color)
         for _ in range(max(0, warmup_frames)): pipeline.wait_for_frames()
         layout = default_layout()
+        if registration.get("operator_confirmed") is not True:
+            raise ValueError("reference registration is not operator-confirmed")
         previous_pose: BoardPose | None = None
         while not stop_event.is_set():
             frames = align.process(pipeline.wait_for_frames()); color = frames.get_color_frame(); depth = frames.get_depth_frame()
