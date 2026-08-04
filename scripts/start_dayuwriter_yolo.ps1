@@ -4,16 +4,12 @@ param(
     [Parameter(Mandatory)] [string]$ClassName,
     [string]$Serial = '231122070403',
     [int]$Port = 8765,
-    [switch]$ArmMotion,
-    [switch]$ZDropPreflight,
-    [double]$ZDropMm = 0.0
+    [switch]$ArmMotion
 )
 $ErrorActionPreference = 'Stop'
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 Set-Location $projectRoot
 if (-not (Test-Path -LiteralPath $Model -PathType Leaf)) { throw "YOLO model not found: $Model" }
-if ($ZDropMm -lt 0 -or $ZDropMm -gt 1) { throw 'ZDropMm must be within 0 to 1 mm' }
-if ($ZDropMm -gt 0 -and -not $ZDropPreflight) { throw 'A positive ZDropMm requires -ZDropPreflight' }
 $python = (Get-Command python -ErrorAction Stop).Source
 $dashboardLog = Join-Path $projectRoot 'docs/dayuwriter/baseline/live-yolo-dashboard.stdout.log'
 $dashboardErr = Join-Path $projectRoot 'docs/dayuwriter/baseline/live-yolo-dashboard.stderr.log'
@@ -30,6 +26,5 @@ $ports = @($ports | Sort-Object -Unique)
 if ($ports.Count -ne 1) { throw "Expected exactly one CH340 port; found $($ports -join ', ')" }
 Write-Host "Detected one CH340: $($ports[0])."
 $followArgs = @('-m','communication.dayuwriter.visual_follow','--dashboard-url',"http://127.0.0.1:$Port/state.json",'--class-name',$ClassName,'--port',$ports[0],'--baseline-x','0','--baseline-y','0','--execute','--physical-preflight','--feed','500','--continuous','--max-moves','1','--max-observations','120','--return-to-p0','--hold-at-target-seconds','10')
-if ($ZDropMm -gt 0) { $followArgs += @('--z-drop-mm',([string]$ZDropMm),'--z-drop-preflight') }
 & $python @followArgs
 exit $LASTEXITCODE

@@ -26,7 +26,7 @@ dayuwriter-control 中已经验证 torch 2.13.0+cu126、GPU available True、NVI
 
     python -m communication.dayuwriter.visual_follow --dashboard-url http://127.0.0.1:8765/state.json --class-name bottle --port COM4 --baseline-x 0 --baseline-y 0 --continuous --max-moves 1 --max-observations 120 --return-to-p0 --hold-at-target-seconds 10 --feed 500 --execute --physical-preflight
 
-该命令使用固定物理 P0 (0,0)，不是把第一个 YOLO 目标当作原点。它先走 XY，停留 10 秒，再回到 P0；默认不下降 Z。只有 XY 经尺子和悬空测试正确后，才可另加 z-drop-mm 0.5 和 z-drop-preflight，最大 1 mm。
+该命令使用固定物理 P0 (0,0)，不是把第一个 YOLO 目标当作原点。它先走 XY，停留 10 秒，再回到 P0；一键连续模式保持 Z 悬空。Z 下降必须另做单次、独立的预检和命令，不能直接加到连续跟随脚本上。
 
 ## 一键显示入口
 
