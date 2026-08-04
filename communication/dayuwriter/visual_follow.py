@@ -52,6 +52,9 @@ class LiveTarget:
 
     x_mm: float
     y_mm: float
+    requested_class: str | None = None
+    camera_xyz_mm: tuple[float, float, float] | None = None
+    machine_xyz_mm: tuple[float, float, float] | None = None
 
 
 @dataclass(frozen=True)
@@ -165,7 +168,9 @@ def _validate_target_within_p0_envelope(
         )
 
 
-def parse_live_target(payload: Mapping[str, Any]) -> LiveTarget:
+def parse_live_target(
+    payload: Mapping[str, Any], *, requested_class: str | None = None
+) -> LiveTarget:
     """Accept only a ready, display-only dashboard snapshot with an XY target."""
 
     if payload.get("state") != "ready":
@@ -174,8 +179,16 @@ def parse_live_target(payload: Mapping[str, Any]) -> LiveTarget:
         raise VisualFollowError("dashboard mapping_state must be available")
     if payload.get("motion_permission") != "display_only":
         raise VisualFollowError("dashboard must explicitly be display_only")
-    if not isinstance(payload.get("target"), Mapping):
-        raise VisualFollowError("dashboard has no detected red target")
+    target_record = payload.get("target")
+    if not isinstance(target_record, Mapping):
+        raise VisualFollowError("dashboard has no detected target")
+    reference_state = payload.get("reference_state")
+    if requested_class is not None:
+        if reference_state != "ready":
+            raise VisualFollowError("reference board is not ready")
+        actual_class = target_record.get("class_name")
+        if actual_class != requested_class:
+            raise VisualFollowError(f"target class {actual_class!r} does not match requested class {requested_class!r}")
     machine_xy = payload.get("machine_xy_mm")
     if not isinstance(machine_xy, Mapping):
         raise VisualFollowError("dashboard has no machine_xy_mm target")
@@ -186,7 +199,27 @@ def parse_live_target(payload: Mapping[str, Any]) -> LiveTarget:
         raise VisualFollowError("dashboard machine_xy_mm must contain finite x and y") from exc
     if not isfinite(x_mm) or not isfinite(y_mm):
         raise VisualFollowError("dashboard machine_xy_mm must contain finite x and y")
-    return LiveTarget(x_mm=x_mm, y_mm=y_mm)
+    camera_xyz = _optional_xyz(target_record.get("camera_xyz_mm"))
+    machine_xyz = _optional_xyz(target_record.get("machine_xyz_mm"))
+    if requested_class is not None and camera_xyz is None:
+        raise VisualFollowError("dashboard target camera_xyz_mm is missing or invalid")
+    return LiveTarget(
+        x_mm=x_mm,
+        y_mm=y_mm,
+        requested_class=requested_class,
+        camera_xyz_mm=camera_xyz,
+        machine_xyz_mm=machine_xyz,
+    )
+
+
+def _optional_xyz(value: object) -> tuple[float, float, float] | None:
+    if not isinstance(value, Mapping):
+        return None
+    try:
+        point = tuple(float(value[axis]) for axis in ("x", "y", "z"))
+    except (KeyError, TypeError, ValueError):
+        return None
+    return point if all(isfinite(item) for item in point) else None
 
 
 def build_follow_proposal(
@@ -255,6 +288,7 @@ def fetch_ready_live_target(
     fetcher: Callable[[str], Mapping[str, Any]] = fetch_dashboard_state,
     attempts: int = 10,
     sleeper: Callable[[float], None] = time.sleep,
+    requested_class: str | None = None,
 ) -> LiveTarget:
     """Wait briefly for a complete ready frame, without accepting degraded data."""
 
@@ -263,7 +297,7 @@ def fetch_ready_live_target(
     last_error: VisualFollowError | None = None
     for attempt in range(attempts):
         try:
-            return parse_live_target(fetcher(url))
+            return parse_live_target(fetcher(url), requested_class=requested_class)
         except VisualFollowError as exc:
             last_error = exc
             if attempt + 1 < attempts:
@@ -394,6 +428,7 @@ def build_parser() -> argparse.ArgumentParser:
         default="http://127.0.0.1:8765/state.json",
         help="Display-only dashboard state endpoint",
     )
+    parser.add_argument("--class-name", help="YOLO class required for an executed target")
     parser.add_argument("--baseline-x", required=True, type=float, help="P0 visual baseline X in mm")
     parser.add_argument("--baseline-y", required=True, type=float, help="P0 visual baseline Y in mm")
     parser.add_argument("--feed", type=float, default=500.0, help="XY feed in mm/min, maximum 500")
@@ -486,7 +521,11 @@ def run(
                 fetcher=fetcher,
                 controller_factory=controller_factory,
             )
-        target = fetch_ready_live_target(args.dashboard_url, fetcher=fetcher)
+        target = fetch_ready_live_target(
+            args.dashboard_url,
+            fetcher=fetcher,
+            requested_class=getattr(args, "class_name", None),
+        )
         proposal = build_target_move_proposal(
             baseline,
             target,

@@ -8,6 +8,8 @@ from typing import Callable, Sequence
 
 import numpy as np
 
+from .aruco_reference_board import ArucoBoardLayout
+
 
 @dataclass(frozen=True)
 class CameraPoint:
@@ -93,3 +95,24 @@ def project_target_to_writer_plane(machine_point: MachinePoint, plane_z_mm: floa
     if not math.isfinite(plane_z):
         raise ValueError("plane_z_mm must be finite")
     return MachinePoint(machine_point.x_mm, machine_point.y_mm, plane_z)
+
+
+def transform_camera_to_writer(
+    camera_point: CameraPoint,
+    rotation: Sequence[Sequence[float]],
+    translation: Sequence[float],
+    *,
+    layout: ArucoBoardLayout,
+) -> MachinePoint:
+    """Invert the board-to-camera pose and map board XY through fixed P0."""
+
+    matrix = np.asarray(rotation, dtype=float)
+    offset = np.asarray(translation, dtype=float).reshape(-1)
+    camera = np.asarray((camera_point.x_mm, camera_point.y_mm, camera_point.z_mm), dtype=float)
+    if matrix.shape != (3, 3) or offset.size != 3 or not np.all(np.isfinite(matrix)) or not np.all(np.isfinite(offset)):
+        raise ValueError("rotation and translation must be finite 3-D transform values")
+    board = matrix.T @ (camera - offset)
+    if not np.all(np.isfinite(board)):
+        raise ValueError("board point must be finite")
+    x_mm, y_mm = layout.machine_xy_for_board((float(board[0]), float(board[1])))
+    return MachinePoint(x_mm, y_mm, float(board[2]))
