@@ -75,3 +75,18 @@ def test_dashboard_parser_requires_a_registration_record_path() -> None:
     assert str(args.reference_registration).endswith(
         "docs\\dayuwriter\\calibration\\camera-a-a4-aruco-registration.json"
     )
+
+
+def test_no_target_state_can_still_report_ready_reference_pose() -> None:
+    state = snapshot_yolo_state(
+        serial="231122070403",
+        detection=None,
+        camera_point=None,
+        machine_point=None,
+        board_pose=pose(),
+        error=None,
+    )
+    assert state["state"] == "no_target"
+    assert state["reference_state"] == "ready"
+    assert state["mapping_state"] == "unavailable"
+    assert state["pose_validation"]["visible_ids"] == [0, 1, 2, 3, 4, 5]

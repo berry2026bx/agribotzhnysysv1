@@ -211,9 +211,9 @@ def _camera_worker(store: SnapshotStore, stop_event: threading.Event, detector: 
         while not stop_event.is_set():
             frames = align.process(pipeline.wait_for_frames()); color = frames.get_color_frame(); depth = frames.get_depth_frame()
             if not color or not depth: continue
-            rgb = np.asanyarray(color.get_data()).copy(); detections = detector.predict(rgb); detection = select_target(detections, class_name)
-            if detection is None:
-                store.publish(make_bmp_bytes(rgb), snapshot_yolo_state(serial=serial, detection=None, camera_point=None, machine_point=None, board_pose=None, error=None)); continue
+            rgb = np.asanyarray(color.get_data()).copy()
+            detections = detector.predict(rgb)
+            detection = select_target(detections, class_name)
             camera_point = None; machine_point = None; error = None; board_pose = None
             try:
                 corners = detect_marker_corners(rgb, layout)
@@ -223,13 +223,17 @@ def _camera_worker(store: SnapshotStore, stop_event: threading.Event, detector: 
                 board_pose = estimate_board_pose(corners, camera_matrix, distortion, layout, serial=serial, stream_size=(int(intrinsics.width), int(intrinsics.height)))
                 validate_board_pose(board_pose, previous_pose=previous_pose)
                 previous_pose = board_pose
-                z = estimate_depth_m(depth, round(detection.center_uv[0]), round(detection.center_uv[1]), radius=2)
-                camera_point = deproject_color_pixel(intrinsics, z, detection.center_uv, rs.rs2_deproject_pixel_to_point)
-                machine_point = transform_camera_to_writer(camera_point, board_pose.rotation, board_pose.translation, layout=layout)
+                if detection is not None:
+                    z = estimate_depth_m(depth, round(detection.center_uv[0]), round(detection.center_uv[1]), radius=2)
+                    camera_point = deproject_color_pixel(intrinsics, z, detection.center_uv, rs.rs2_deproject_pixel_to_point)
+                    machine_point = transform_camera_to_writer(camera_point, board_pose.rotation, board_pose.translation, layout=layout)
             except Exception as exc:
                 error = str(exc)
                 board_pose = None
                 previous_pose = None if "missing marker" in str(exc) else previous_pose
+            if detection is None:
+                store.publish(make_bmp_bytes(rgb), snapshot_yolo_state(serial=serial, detection=None, camera_point=None, machine_point=None, board_pose=board_pose, error=error))
+                continue
             label_xy = None if machine_point is None else {"x": machine_point.x_mm, "y": machine_point.y_mm}
             store.publish(make_bmp_bytes(annotate_yolo_frame(rgb, detection, label_xy)), snapshot_yolo_state(serial=serial, detection=detection, camera_point=camera_point, machine_point=machine_point, board_pose=board_pose, error=error))
     except Exception as exc:
