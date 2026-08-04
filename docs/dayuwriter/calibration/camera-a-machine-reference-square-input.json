@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "captured_at_utc": "2026-07-28T08:07:55Z",
+  "camera": {
+    "serial": "231122070403"
+  },
+  "marker": {
+    "shape": "filled_square",
+    "side_length_mm": 10.0,
+    "coordinate_definition": "The physical reference coordinate is the square's geometric center, manually aligned to the pen-tip projection."
+  },
+  "reference_generation": {
+    "origin": "Pen tip manually aligned to physical P0 before movement.",
+    "x60_y0": "One persistent COM4 session executed twelve X+5 mm jogs at 100 mm/min; every segment returned ok and final Idle before the square was aligned to the pen tip.",
+    "x60_y60": "From physical X60Y0, one persistent COM4 session executed twelve Y+5 mm jogs at 100 mm/min; every segment returned ok and final Idle before the square was aligned to the pen tip.",
+    "x0_y60": "From physical X60Y60, one persistent COM4 session executed twelve X-5 mm jogs at 100 mm/min; every segment returned ok and final Idle before the square was aligned to the pen tip.",
+    "p0": "From physical X0Y60, one persistent COM4 session executed twelve Y-5 mm jogs at 100 mm/min; every segment returned ok and final Idle before the P0 square was aligned to the pen tip."
+  },
+  "fit_points": [
+    {
+      "id": "x60_y0",
+      "pixel_uv": {"u": 382.1408450704226, "v": 283.1690140845071},
+      "machine_xy_mm": {"x": 60.0, "y": 0.0}
+    },
+    {
+      "id": "x60_y60",
+      "pixel_uv": {"u": 444.6428571428572, "v": 258.5714285714286},
+      "machine_xy_mm": {"x": 60.0, "y": 60.0}
+    },
+    {
+      "id": "x0_y60",
+      "pixel_uv": {"u": 362.82978723404256, "v": 303.3191489361702},
+      "machine_xy_mm": {"x": 0.0, "y": 60.0}
+    },
+    {
+      "id": "p0",
+      "pixel_uv": {"u": 297.32758620689657, "v": 341.1034482758621},
+      "machine_xy_mm": {"x": 0.0, "y": 0.0}
+    }
+  ],
+  "validation_points": [
+    {
+      "id": "x35_y30_held_out",
+      "pixel_uv": {"u": 356.16417910447763, "v": 331.73523685918235},
+      "machine_xy_mm": {"x": 35.0, "y": 30.0},
+      "physical_coordinate_evidence": "User reported and aligned the square to the current pen tip at X35Y30 after a commanded path of X+30 mm then Y+30 mm from physical P0. The 5 mm X discrepancy is preserved as an observed motion/reference discrepancy, not rewritten as X30Y30."
+    }
+  ],
+  "capture_quality": {
+      "x60_y0": {
+      "red_target_pixel_samples": 12,
+      "valid_depth_samples": 12,
+      "invalid_depth_samples": 0,
+      "depth_m_range_for_valid_samples": [0.4010000228881836, 0.4020000100135803],
+      "median_area_px": 71,
+        "median_bbox_uvwh": {"width": 14, "height": 7}
+      },
+      "x60_y60": {
+        "red_target_pixel_samples": 12,
+        "valid_depth_samples": 12,
+        "invalid_depth_samples": 0,
+        "depth_m_range_for_valid_samples": [0.4320000112056732, 0.4390000104904175],
+        "median_area_px": 56,
+        "median_bbox_uvwh": {"width": 14, "height": 6}
+      },
+      "x0_y60": {
+        "red_target_pixel_samples": 12,
+        "valid_depth_samples": 12,
+        "invalid_depth_samples": 0,
+        "depth_m_range_for_valid_samples": [0.453000009059906, 0.45500001311302185],
+        "median_area_px": 47,
+        "median_bbox_uvwh": {"width": 12, "height": 6}
+      },
+      "p0": {
+        "red_target_pixel_samples": 12,
+        "valid_depth_samples": 12,
+        "invalid_depth_samples": 0,
+        "depth_m_range_for_valid_samples": [0.42200002074241638, 0.4230000078678131],
+        "median_area_px": 58,
+        "median_bbox_uvwh": {"width": 12, "height": 7}
+      },
+      "x35_y30_held_out": {
+        "red_target_pixel_samples": 12,
+        "valid_depth_samples": 12,
+        "invalid_depth_samples": 0,
+        "depth_m_range_for_valid_samples": [0.41100001335144037, 0.41200003027915955],
+        "median_area_px": 67.5,
+        "median_bbox_uvwh": {"width": 14, "height": 7}
+      }
+  },
+  "motion_permission": "display_only",
+  "status": "Machine-generated square reference calibration and one independent physical validation point captured; fit and error review pending."
+}

@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "captured_at_utc": "2026-07-27T14:48:35+00:00",
+  "device": {
+    "name": "RealSense D435I",
+    "serial": "231122070403"
+  },
+  "streams": {
+    "color": {
+      "width_px": 640,
+      "height_px": 480,
+      "fps": 30,
+      "format": "rgb8"
+    },
+    "depth": {
+      "width_px": 640,
+      "height_px": 480,
+      "fps": 30,
+      "format": "z16",
+      "scale_m_per_unit": 0.0010000000474974513
+    }
+  },
+  "alignment": {
+    "source": "depth",
+    "target": "color"
+  },
+  "color_intrinsics": {
+    "fx": 605.6983032226562,
+    "fy": 605.3346557617188,
+    "ppx": 329.295654296875,
+    "ppy": 246.22186279296875,
+    "model": "distortion.inverse_brown_conrady",
+    "coeffs": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ]
+  },
+  "center_sample": {
+    "pixel_uv": {
+      "u": 320,
+      "v": 240
+    },
+    "depth_m": 0.6960000395774841,
+    "point_camera_m": {
+      "x": -0.0106815155595541,
+      "y": -0.007153756450861692,
+      "z": 0.6960000395774841
+    }
+  },
+  "depth_sampling": {
+    "requested_pixel_uv": {
+      "u": 320,
+      "v": 240
+    },
+    "strategy": "center_outward_first_valid",
+    "radius_px": 5
+  },
+  "camera_coordinate_convention": {
+    "x": "right",
+    "y": "down",
+    "z": "forward",
+    "unit": "m"
+  }
+}

@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "captured_at_utc": "2026-07-28T03:25:06+00:00",
+  "camera": {
+    "serial": "231122070403"
+  },
+  "fit_points": [
+    {
+      "id": "p0",
+      "pixel_uv": {
+        "u": 278.0,
+        "v": 344.0
+      },
+      "machine_xy_mm": {
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    {
+      "id": "x60_y0",
+      "pixel_uv": {
+        "u": 336.0,
+        "v": 372.0
+      },
+      "machine_xy_mm": {
+        "x": 60.0,
+        "y": 0.0
+      }
+    },
+    {
+      "id": "x60_y60",
+      "pixel_uv": {
+        "u": 402.0,
+        "v": 346.0
+      },
+      "machine_xy_mm": {
+        "x": 60.0,
+        "y": 60.0
+      }
+    },
+    {
+      "id": "x0_y60",
+      "pixel_uv": {
+        "u": 342.0,
+        "v": 319.0
+      },
+      "machine_xy_mm": {
+        "x": 0.0,
+        "y": 60.0
+      }
+    }
+  ],
+  "matrix_pixel_to_machine": [
+    [
+      0.7162249841338716,
+      1.8335359593843825,
+      -829.8469156173581
+    ],
+    [
+      0.7715766265315551,
+      -1.5982658692409188,
+      335.3051568430281
+    ],
+    [
+      0.0003533192471543156,
+      0.0011539937240054865,
+      1.0
+    ]
+  ],
+  "validation": {
+    "count": 1,
+    "mean_error_mm": 0.7238890961004418,
+    "max_error_mm": 0.7238890961004418,
+    "points": [
+      {
+        "id": "x30_y30_held_out",
+        "pixel_uv": {
+          "u": 338.0,
+          "v": 345.0
+        },
+        "expected_machine_xy_mm": {
+          "x": 30.0,
+          "y": 30.0
+        },
+        "predicted_machine_xy_mm": {
+          "x": 29.52590865196454,
+          "y": 29.452959949207525
+        },
+        "error_mm": 0.7238890961004418
+      }
+    ]
+  },
+  "motion_permission": "display_only",
+  "limitations": [
+    "The artifact is valid only for this camera serial and unchanged mount pose.",
+    "This artifact does not authorize GRBL motion."
+  ]
+}

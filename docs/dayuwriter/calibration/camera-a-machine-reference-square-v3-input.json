@@ -1,0 +1,115 @@
+{
+  "schema_version": 1,
+  "captured_at_utc": "2026-07-28T09:59:18Z",
+  "camera": {
+    "serial": "231122070403"
+  },
+  "marker": {
+    "shape": "filled_square",
+    "side_length_mm": 10.0,
+    "coordinate_definition": "The physical reference coordinate is the square's geometric center, manually aligned to the pen-tip projection. Only one red square is visible for each capture."
+  },
+  "capture_method": {
+    "pipeline": "One-shot direct pyrealsense2 capture, depth aligned to color at 640x480 RGB and depth, 30 fps.",
+    "exposure_warmup_frames": 90,
+    "reason": "A stale dashboard worker and short direct captures produced non-stable RGB exposure. The v3 method discards the first 90 frames before every observation."
+  },
+  "coordinate_convention": {
+    "origin": "The physical P0 mark on the paper plane.",
+    "x_positive": "The previously verified GRBL X+ physical direction.",
+    "y_positive": "The previously verified GRBL Y+ physical direction.",
+    "motion_precheck": "From P0, commanded X+30 mm measured 30 mm physically; commanded Y+30 mm measured 30 mm physically."
+  },
+  "reference_generation": {
+    "p0": "After the COM4 interruption, the pen tip was manually realigned to physical P0 with 12 V disconnected, then the red square center was aligned to the pen tip before capture.",
+    "x30_y0": "From physical P0, one persistent COM4 session executed six X+5 mm jogs at 100 mm/min; every segment returned ok and final Idle before the square was aligned to the pen tip.",
+    "x30_y30": "From physical X30Y0, one persistent COM4 session executed six Y+5 mm jogs at 100 mm/min; every segment returned ok and final Idle before the square was aligned to the pen tip.",
+    "x0_y30": "From physical X30Y30, one persistent COM4 session executed six X-5 mm jogs at 100 mm/min; every segment returned ok and final Idle before the square was aligned to the pen tip."
+  },
+  "fit_points": [
+    {
+      "id": "p0",
+      "pixel_uv": {"u": 266.53694581280786, "v": 272.83314794215795},
+      "machine_xy_mm": {"x": 0.0, "y": 0.0}
+    },
+    {
+      "id": "x30_y0",
+      "pixel_uv": {"u": 292.16261808367074, "v": 287.05263157894734},
+      "machine_xy_mm": {"x": 30.0, "y": 0.0}
+    },
+    {
+      "id": "x30_y30",
+      "pixel_uv": {"u": 328.3709677419355, "v": 271.5806451612903},
+      "machine_xy_mm": {"x": 30.0, "y": 30.0}
+    },
+    {
+      "id": "x0_y30",
+      "pixel_uv": {"u": 299.7471428571429, "v": 260.2807142857143},
+      "machine_xy_mm": {"x": 0.0, "y": 30.0}
+    }
+  ],
+  "validation_points": [
+    {
+      "id": "x15_y15_held_out",
+      "pixel_uv": {"u": 296.02520161290323, "v": 272.51666666666665},
+      "machine_xy_mm": {"x": 15.0, "y": 15.0}
+    },
+    {
+      "id": "x10_y20_held_out",
+      "pixel_uv": {"u": 298.3, "v": 267.5},
+      "machine_xy_mm": {"x": 10.0, "y": 20.0}
+    }
+  ],
+  "capture_quality": {
+      "p0": {
+        "red_target_pixel_samples": 12,
+        "valid_depth_samples": 12,
+        "invalid_depth_samples": 0,
+        "depth_m_range_for_valid_samples": [0.4020000100135803, 0.40300002694129944],
+        "median_area_px": 58.0,
+        "median_bbox_uvwh": {"width": 14, "height": 7}
+      },
+      "x30_y0": {
+        "red_target_pixel_samples": 12,
+        "valid_depth_samples": 12,
+        "invalid_depth_samples": 0,
+        "depth_m_range_for_valid_samples": [0.38100001215934753, 0.3830000162124634],
+        "median_area_px": 76.0,
+        "median_bbox_uvwh": {"width": 14, "height": 7}
+      },
+      "x30_y30": {
+        "red_target_pixel_samples": 12,
+        "valid_depth_samples": 12,
+        "invalid_depth_samples": 0,
+        "depth_m_range_for_valid_samples": [0.39900001883506775, 0.4010000228881836],
+        "median_area_px": 62.0,
+        "median_bbox_uvwh": {"width": 14, "height": 6}
+      },
+      "x0_y30": {
+        "red_target_pixel_samples": 12,
+        "valid_depth_samples": 12,
+        "invalid_depth_samples": 0,
+        "depth_m_range_for_valid_samples": [0.41700002551078796, 0.4190000295639038],
+        "median_area_px": 53.0,
+        "median_bbox_uvwh": {"width": 12, "height": 6}
+      },
+      "x15_y15_held_out": {
+        "red_target_pixel_samples": 12,
+        "valid_depth_samples": 12,
+        "invalid_depth_samples": 0,
+        "depth_m_range_for_valid_samples": [0.398000031709671, 0.39900001883506775],
+        "median_area_px": 62.0,
+        "median_bbox_uvwh": {"width": 14, "height": 6}
+      },
+      "x10_y20_held_out": {
+        "red_target_pixel_samples": 12,
+        "valid_depth_samples": 12,
+        "invalid_depth_samples": 0,
+        "depth_m_range_for_valid_samples": [0.406000018119812, 0.40800002217292786],
+        "median_area_px": 60.0,
+        "median_bbox_uvwh": {"width": 14, "height": 6}
+      }
+  },
+  "motion_permission": "display_only",
+  "status": "v3 fit points and two independent validation points captured with 90-frame exposure warmup; fit and error review pending."
+}

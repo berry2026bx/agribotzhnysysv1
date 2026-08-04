@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "captured_at_utc": "2026-07-28T09:15:00Z",
+  "camera": {
+    "serial": "231122070403"
+  },
+  "marker": {
+    "shape": "filled_square",
+    "side_length_mm": 10.0,
+    "coordinate_definition": "The physical reference coordinate is the square's geometric center, manually aligned to the pen-tip projection. Only one red square is visible for each capture."
+  },
+  "coordinate_convention": {
+    "origin": "The physical P0 mark on the paper plane.",
+    "x_positive": "The previously verified GRBL X+ physical direction.",
+    "y_positive": "The previously verified GRBL Y+ physical direction.",
+    "motion_precheck": "From P0, commanded X+30 mm measured 30 mm physically; commanded Y+30 mm measured 30 mm physically. These checks establish this session's 30 mm axis scale but do not validate camera-plane correspondence."
+  },
+  "reference_generation": {
+    "p0": "Pen returned to the physical P0 mark through verified reverse paths. User then aligned the square center to the pen tip before capture.",
+    "x30_y0": "From physical P0, one persistent COM4 session executed six X+5 mm jogs at 100 mm/min; every segment returned ok and final Idle before the square was aligned to the pen tip."
+  },
+  "fit_points": [
+    {
+      "id": "p0",
+      "pixel_uv": {"u": 296.1666666666667, "v": 341.6333333333333},
+      "machine_xy_mm": {"x": 0.0, "y": 0.0}
+    },
+    {
+      "id": "x30_y0",
+      "pixel_uv": {"u": 323.0937946519698, "v": 350.08860342555994},
+      "machine_xy_mm": {"x": 30.0, "y": 0.0}
+    }
+  ],
+  "validation_points": [],
+  "capture_quality": {
+      "p0": {
+        "red_target_pixel_samples": 12,
+        "valid_depth_samples": 12,
+        "invalid_depth_samples": 0,
+        "depth_m_range_for_valid_samples": [0.42000001668930054, 0.42100003361701965],
+        "median_area_px": 59,
+        "median_bbox_uvwh": {"width": 14, "height": 8}
+      },
+      "x30_y0": {
+        "red_target_pixel_samples": 12,
+        "valid_depth_samples": 12,
+        "invalid_depth_samples": 0,
+        "depth_m_range_for_valid_samples": [0.39900001883506775, 0.40000000596046448],
+        "median_area_px": 69.5,
+        "median_bbox_uvwh": {"width": 16, "height": 8}
+      }
+  },
+  "incident": {
+    "event": "COM4 USB serial communication failed while waiting for completion of the first Y+5 mm segment from v2 X30Y0 toward v2 X30Y30.",
+    "evidence": [
+      "pySerial raised Windows PermissionError 31 while reconfiguring write_timeout during the completion-status query.",
+      "The user observed a small physical motion before USB replugging.",
+      "After replugging, Device Manager still displayed USB-SERIAL CH340 (COM4), but Win32_SerialPort listed only COM1 and pySerial could not open/configure COM4."
+    ],
+    "recovery_requirement": "Do not resume a relative path from the current position. After COM connectivity is restored, physically realign the pen tip to P0 before any further motion or capture."
+  },
+  "motion_permission": "display_only",
+  "status": "v2 calibration invalidated: a fresh, exposure-stabilized direct capture of the physically re-established P0 was approximately 75 pixels away from this file's P0 pixel. Do not fit or use v2 for display or motion."
+}

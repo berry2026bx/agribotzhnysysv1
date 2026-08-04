@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "captured_at_utc": "2026-07-28T14:10:35.041707Z",
+  "board_revision": "a4-aruco-v3",
+  "operator_confirmed": true,
+  "board": {
+    "width_mm": 297.0,
+    "height_mm": 210.0,
+    "p0_board_xy_mm": {
+      "x": 148.5,
+      "y": 105.0
+    },
+    "p0_machine_xy_mm": {
+      "x": 0.0,
+      "y": 0.0
+    }
+  },
+  "motion_permission": "display_only"
+}

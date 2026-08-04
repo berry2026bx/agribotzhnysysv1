@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "captured_at_utc": "2026-07-28T04:17:34.5184774Z",
+  "camera": {
+    "serial": "231122070403"
+  },
+  "reference": {
+    "id": "p0",
+    "machine_xy_mm": {
+      "x": 0.0,
+      "y": 0.0
+    }
+  },
+  "observation": {
+    "sample_count": 10,
+    "target_center_uv_median": {
+      "u": 308.8863636363636,
+      "v": 259.5435606060606
+    },
+    "depth_m_median": 0.44700002670288086,
+    "camera_xyz_m_median": {
+      "x": -0.0149780148640275,
+      "y": 0.010174253024160862,
+      "z": 0.44700002670288086
+    }
+  },
+  "motion_permission": "display_only",
+  "limitations": [
+    "This is one observation for the adjusted Camera A mount pose, not a complete planar calibration.",
+    "The previous camera-a-current-pose-result.json is invalid after the mount-pose change and must not be used for machine XY."
+  ]
+}
